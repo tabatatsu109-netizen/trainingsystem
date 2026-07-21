@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>⚽ リフティングカウンター</title>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic", Meiryo, sans-serif;
+    background: #0d1b2a;
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(13, 27, 42, 0.9);
+    z-index: 10;
+  }
+  header h1 { font-size: 18px; font-weight: 700; letter-spacing: 0.5px; }
+  #stage {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+  }
+  #video { display: none; }
+  #canvas {
+    max-width: 100%;
+    max-height: 100%;
+    display: block;
+  }
+  #canvas.mirror { transform: scaleX(-1); }
+  /* ---- overlays ---- */
+  #countBox {
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+    pointer-events: none;
+    text-shadow: 0 2px 12px rgba(0,0,0,0.8);
+  }
+  #count {
+    font-size: clamp(64px, 18vw, 140px);
+    font-weight: 800;
+    line-height: 1;
+    color: #7CFC8A;
+    transition: transform 0.1s ease;
+  }
+  #count.pop { transform: scale(1.25); }
+  #countLabel { font-size: 14px; opacity: 0.85; margin-top: 2px; }
+  #bestBox {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    background: rgba(0,0,0,0.55);
+    border-radius: 12px;
+    padding: 8px 14px;
+    text-align: center;
+    pointer-events: none;
+  }
+  #bestBox .label { font-size: 11px; opacity: 0.8; }
+  #best { font-size: 28px; font-weight: 700; color: #FFD166; }
+  #status {
+    position: absolute;
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.6);
+    border-radius: 999px;
+    padding: 8px 18px;
+    font-size: 14px;
+    max-width: 92%;
+    text-align: center;
+    pointer-events: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #milestone {
+    position: absolute;
+    top: 45%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: clamp(36px, 10vw, 72px);
+    font-weight: 800;
+    color: #FFD166;
+    text-shadow: 0 2px 16px rgba(0,0,0,0.8);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+  }
+  #milestone.show {
+    opacity: 1;
+    transform: translate(-50%, -70%) scale(1.1);
+  }
+  /* ---- controls ---- */
+  #controls {
+    display: flex;
+    gap: 10px;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    background: #0d1b2a;
+  }
+  button {
+    flex: 1;
+    border: none;
+    border-radius: 14px;
+    padding: 16px 8px;
+    font-size: 17px;
+    font-weight: 700;
+    font-family: inherit;
+    color: #fff;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  button:active { filter: brightness(0.85); }
+  button:disabled { opacity: 0.4; cursor: default; }
+  #startBtn { background: #2fbf71; flex: 2; }
+  #startBtn.running { background: #e63946; }
+  #resetBtn { background: #35507a; }
+  #flipBtn { background: #35507a; }
+  /* ---- start screen ---- */
+  #intro {
+    position: absolute;
+    inset: 0;
+    background: #0d1b2a;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 24px;
+    z-index: 20;
+  }
+  #intro .ball { font-size: 72px; margin-bottom: 12px; }
+  #intro h2 { font-size: 24px; margin-bottom: 14px; }
+  #intro p { font-size: 15px; line-height: 1.8; opacity: 0.85; max-width: 420px; margin-bottom: 24px; }
+  #intro button {
+    flex: none;
+    background: #2fbf71;
+    padding: 16px 48px;
+    font-size: 18px;
+  }
+  #introStatus { margin-top: 16px; font-size: 13px; opacity: 0.7; min-height: 1.2em; }
+</style>
+</head>
+<body>
+<header>
+  <h1>⚽ リフティングカウンター</h1>
+</header>
+
+<div id="stage">
+  <video id="video" playsinline muted></video>
+  <canvas id="canvas"></canvas>
+
+  <div id="countBox">
+    <div id="count">0</div>
+    <div id="countLabel">れんぞく かいすう</div>
+  </div>
+  <div id="bestBox">
+    <div class="label">さいこうきろく</div>
+    <div id="best">0</div>
+  </div>
+  <div id="milestone"></div>
+  <div id="status">「はじめる」を押してね</div>
+
+  <div id="intro">
+    <div class="ball">⚽</div>
+    <h2>リフティングカウンター</h2>
+    <p>
+      カメラがボールを見つけて、リフティングの回数を自動でかぞえます。<br>
+      <b>体全体とボールが画面に入る</b>ように、タブレットを2〜3m離して置いてね。<br>
+      明るい場所のほうがよく見えるよ。
+    </p>
+    <button id="setupBtn">カメラをはじめる</button>
+    <div id="introStatus"></div>
+  </div>
+</div>
+
+<div id="controls">
+  <button id="flipBtn" disabled>🔄 カメラ切替</button>
+  <button id="startBtn" disabled>▶ はじめる</button>
+  <button id="resetBtn" disabled>リセット</button>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ---------- DOM ----------
+  var video = document.getElementById('video');
+  var canvas = document.getElementById('canvas');
+  var ctx = canvas.getContext('2d');
+  var countEl = document.getElementById('count');
+  var bestEl = document.getElementById('best');
+  var statusEl = document.getElementById('status');
+  var milestoneEl = document.getElementById('milestone');
+  var intro = document.getElementById('intro');
+  var introStatus = document.getElementById('introStatus');
+  var setupBtn = document.getElementById('setupBtn');
+  var startBtn = document.getElementById('startBtn');
+  var resetBtn = document.getElementById('resetBtn');
+  var flipBtn = document.getElementById('flipBtn');
+
+  // ---------- state ----------
+  var model = null;
+  var stream = null;
+  var facing = 'environment'; // back camera first (better for filming a player)
+  var running = false;        // counting active
+  var detecting = false;      // detection loop active
+  var count = 0;
+  var best = 0;               // session best (in-memory)
+  var wakeLock = null;
+
+  // ball tracking state
+  var lastBall = null;        // {x, y, r, t}
+  var smoothY = null;
+  var velocity = 0;           // px/sec (positive = moving DOWN on screen)
+  var lastT = 0;
+  var phase = 'none';         // 'up' | 'down' | 'none'
+  var lastCountT = 0;
+  var lostSince = null;
+
+  var VEL_THRESHOLD = 60;     // px/sec needed to register direction
+  var MIN_INTERVAL = 220;     // ms between counts
+  var LOST_RESET_MS = 2500;   // ball lost this long while running -> streak ends
+
+  // ---------- audio ----------
+  var audioCtx = null;
+  function beep(freq, dur, gainVal) {
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      var osc = audioCtx.createOscillator();
+      var gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(gainVal || 0.15, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + (dur || 0.12));
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + (dur || 0.12));
+    } catch (e) { /* audio unavailable - ignore */ }
+  }
+
+  function setStatus(msg) { statusEl.textContent = msg; }
+
+  function showMilestone(text) {
+    milestoneEl.textContent = text;
+    milestoneEl.classList.add('show');
+    setTimeout(function () { milestoneEl.classList.remove('show'); }, 1200);
+  }
+
+  // ---------- camera ----------
+  function startCamera() {
+    if (stream) {
+      stream.getTracks().forEach(function (t) { t.stop(); });
+      stream = null;
+    }
+    var constraints = {
+      audio: false,
+      video: {
+        facingMode: facing,
+        width: { ideal: 640 },
+        height: { ideal: 480 }
+      }
+    };
+    return navigator.mediaDevices.getUserMedia(constraints).then(function (s) {
+      stream = s;
+      video.srcObject = s;
+      return video.play();
+    }).then(function () {
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+      canvas.classList.toggle('mirror', facing === 'user');
+    });
+  }
+
+  function requestWakeLock() {
+    try {
+      if ('wakeLock' in navigator) {
+        navigator.wakeLock.request('screen').then(function (wl) { wakeLock = wl; }).catch(function () {});
+      }
+    } catch (e) { /* not supported */ }
+  }
+
+  // ---------- counting logic ----------
+  function resetStreak(announce) {
+    if (count > best) {
+      best = count;
+      bestEl.textContent = best;
+    }
+    if (announce && count >= 3) {
+      showMilestone('きろく ' + count + ' かい!');
+    }
+    count = 0;
+    countEl.textContent = '0';
+    phase = 'none';
+    smoothY = null;
+    velocity = 0;
+  }
+
+  function registerTouch() {
+    var now = performance.now();
+    if (now - lastCountT < MIN_INTERVAL) return;
+    lastCountT = now;
+    count++;
+    countEl.textContent = count;
+    countEl.classList.add('pop');
+    setTimeout(function () { countEl.classList.remove('pop'); }, 120);
+
+    if (count > 0 && count % 10 === 0) {
+      showMilestone(count + ' かい! 🎉');
+      beep(880, 0.15, 0.2);
+      setTimeout(function () { beep(1175, 0.2, 0.2); }, 130);
+    } else {
+      beep(660 + Math.min(count * 4, 200), 0.1, 0.15);
+    }
+    if (count > best) {
+      best = count;
+      bestEl.textContent = best;
+    }
+  }
+
+  function updateTracking(ball, now) {
+    if (!ball) {
+      if (running && lastBall) {
+        if (lostSince === null) lostSince = now;
+        else if (now - lostSince > LOST_RESET_MS) {
+          setStatus('ボールを見うしなったよ。もういちど!');
+          resetStreak(true);
+          lostSince = null;
+          lastBall = null;
+        }
+      }
+      return;
+    }
+    lostSince = null;
+
+    var y = ball.y;
+    if (smoothY === null) {
+      smoothY = y;
+      lastT = now;
+      lastBall = ball;
+      return;
+    }
+    var dt = (now - lastT) / 1000;
+    if (dt <= 0) return;
+
+    // exponential smoothing
+    var alpha = 0.5;
+    var newSmooth = alpha * y + (1 - alpha) * smoothY;
+    var v = (newSmooth - smoothY) / dt; // +down, -up (screen coords)
+    velocity = 0.6 * v + 0.4 * velocity;
+    smoothY = newSmooth;
+    lastT = now;
+    lastBall = ball;
+
+    if (!running) return;
+
+    if (velocity > VEL_THRESHOLD) {
+      phase = 'down';
+    } else if (velocity < -VEL_THRESHOLD) {
+      // direction changed from down to up => the ball was kicked
+      if (phase === 'down') registerTouch();
+      phase = 'up';
+    }
+
+    // dropped on the ground: ball near bottom edge and slow
+    if (running && ball.y > canvas.height * 0.93 && Math.abs(velocity) < VEL_THRESHOLD && count > 0) {
+      setStatus('おっと、落ちたかな? つづけよう!');
+      resetStreak(true);
+    }
+  }
+
+  // ---------- detection loop ----------
+  function detectLoop() {
+    if (!detecting || !model) return;
+    model.detect(video).then(function (preds) {
+      var now = performance.now();
+      var ball = null;
+      var bestScore = 0.35; // min confidence
+      for (var i = 0; i < preds.length; i++) {
+        var p = preds[i];
+        if (p.class === 'sports ball' && p.score > bestScore) {
+          bestScore = p.score;
+          ball = {
+            x: p.bbox[0] + p.bbox[2] / 2,
+            y: p.bbox[1] + p.bbox[3] / 2,
+            r: Math.max(p.bbox[2], p.bbox[3]) / 2,
+            t: now
+          };
+        }
+      }
+      draw(ball);
+      updateTracking(ball, now);
+      if (detecting) requestAnimationFrame(detectLoop);
+    }).catch(function () {
+      if (detecting) setTimeout(detectLoop, 500);
+    });
+  }
+
+  function draw(ball) {
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    if (ball) {
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, ball.r + 6, 0, Math.PI * 2);
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = running ? '#7CFC8A' : '#FFD166';
+      ctx.stroke();
+    }
+  }
+
+  // ---------- UI wiring ----------
+  setupBtn.addEventListener('click', function () {
+    if (!window.isSecureContext) {
+      introStatus.textContent = 'このページはHTTPS(または端末内ファイル)で開く必要があります。';
+      return;
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      introStatus.textContent = 'このブラウザはカメラに対応していません。ChromeかSafariで開いてね。';
+      return;
+    }
+    if (typeof cocoSsd === 'undefined' || typeof tf === 'undefined') {
+      introStatus.textContent = 'AIの読み込みに失敗しました。インターネットに接続した状態でページを開き直してね。(2回目からはオフラインでも動くことがあります)';
+      return;
+    }
+    setupBtn.disabled = true;
+    introStatus.textContent = 'AIモデルを読み込み中…(はじめてのときは少し時間がかかります)';
+
+    var modelPromise = model ? Promise.resolve(model) : cocoSsd.load({ base: 'lite_mobilenet_v2' });
+
+    modelPromise.then(function (m) {
+      model = m;
+      introStatus.textContent = 'カメラを起動中…';
+      return startCamera();
+    }).then(function () {
+      intro.style.display = 'none';
+      startBtn.disabled = false;
+      resetBtn.disabled = false;
+      flipBtn.disabled = false;
+      detecting = true;
+      detectLoop();
+      setStatus('ボールが黄色い丸でかこまれたら「はじめる」!');
+      requestWakeLock();
+    }).catch(function (err) {
+      setupBtn.disabled = false;
+      var msg = String(err && (err.name || err.message) || err);
+      if (msg.indexOf('NotAllowed') !== -1) {
+        introStatus.textContent = 'カメラの使用が許可されませんでした。ブラウザの設定でカメラを許可してね。';
+      } else if (msg.indexOf('NotFound') !== -1 || msg.indexOf('Overconstrained') !== -1) {
+        introStatus.textContent = 'カメラが見つかりませんでした。';
+      } else {
+        introStatus.textContent = '読み込みに失敗しました。インターネット接続を確認してもう一度試してね。(' + msg + ')';
+      }
+    });
+  });
+
+  startBtn.addEventListener('click', function () {
+    running = !running;
+    if (running) {
+      startBtn.textContent = '⏸ ストップ';
+      startBtn.classList.add('running');
+      setStatus('カウント中! がんばれ!');
+      beep(523, 0.1, 0.15);
+    } else {
+      startBtn.textContent = '▶ はじめる';
+      startBtn.classList.remove('running');
+      resetStreak(true);
+      setStatus('ストップしたよ');
+    }
+  });
+
+  resetBtn.addEventListener('click', function () {
+    count = 0;
+    countEl.textContent = '0';
+    phase = 'none';
+    setStatus('リセットしたよ');
+  });
+
+  flipBtn.addEventListener('click', function () {
+    facing = (facing === 'environment') ? 'user' : 'environment';
+    flipBtn.disabled = true;
+    startCamera().then(function () {
+      flipBtn.disabled = false;
+    }).catch(function () {
+      // revert on failure (e.g., device has only one camera)
+      facing = (facing === 'environment') ? 'user' : 'environment';
+      startCamera().catch(function () {});
+      flipBtn.disabled = false;
+    });
+  });
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') requestWakeLock();
+  });
+})();
+</script>
+</body>
+</html>

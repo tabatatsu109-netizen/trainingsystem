@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>⚽ トレーニングシステム</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic", Meiryo, sans-serif;
+    background: linear-gradient(160deg, #0d1b2a 0%, #16324f 100%);
+    color: #fff;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px 20px;
+  }
+  h1 { font-size: 26px; margin-bottom: 6px; text-align: center; }
+  .sub { font-size: 14px; opacity: 0.75; margin-bottom: 32px; text-align: center; }
+  .menu {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: 100%;
+    max-width: 480px;
+  }
+  a.card {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 18px;
+    padding: 20px;
+    text-decoration: none;
+    color: #fff;
+    transition: transform 0.1s ease, background 0.2s ease;
+  }
+  a.card:active { transform: scale(0.98); background: rgba(255,255,255,0.12); }
+  .icon { font-size: 40px; }
+  .card h2 { font-size: 18px; margin-bottom: 4px; }
+  .card p { font-size: 13px; opacity: 0.8; line-height: 1.5; }
+  footer { margin-top: auto; padding-top: 40px; font-size: 12px; opacity: 0.5; text-align: center; line-height: 1.8; }
+</style>
+</head>
+<body>
+  <h1>⚽ トレーニングシステム</h1>
+  <div class="sub">カメラを使った練習サポートアプリ</div>
+  <div class="menu">
+    <a class="card" href="lifting-counter.html">
+      <span class="icon">⚽</span>
+      <span>
+        <h2>リフティングカウンター</h2>
+        <p>カメラがボールを追跡して、リフティングの回数を自動でカウント</p>
+      </span>
+    </a>
+    <a class="card" href="jump-meter.html">
+      <span class="icon">🦘</span>
+      <span>
+        <h2>ジャンプ力メーター</h2>
+        <p>何cmジャンプしたかを自動計測。GK・ヘディング練習に</p>
+      </span>
+    </a>
+    <a class="card" href="delay-replay.html">
+      <span class="icon">🎥</span>
+      <span>
+        <h2>フォームチェッカー(遅延再生)</h2>
+        <p>プレー後に端末へ戻ると自分のフォームが流れる。スロー再生・コマ送り付き</p>
+      </span>
+    </a>
+  </div>
+  <footer>
+    映像は端末の中だけで処理され、外部には送信されません。<br>
+    初回はAI読み込みのためインターネット接続が必要です。
+  </footer>
+</body>
+</html>

@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>🦘 ジャンプ力メーター</title>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic", Meiryo, sans-serif;
+    background: #101c2c;
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(16, 28, 44, 0.9);
+    z-index: 10;
+  }
+  header h1 { font-size: 18px; font-weight: 700; }
+  #playerTag { font-size: 13px; opacity: 0.75; }
+  #stage {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+  }
+  #video { display: none; }
+  #canvas { max-width: 100%; max-height: 100%; display: block; }
+  #canvas.mirror { transform: scaleX(-1); }
+
+  #resultBox {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+    pointer-events: none;
+    text-shadow: 0 2px 12px rgba(0,0,0,0.85);
+  }
+  #jumpVal {
+    font-size: clamp(56px, 16vw, 120px);
+    font-weight: 800;
+    line-height: 1;
+    color: #6EC6FF;
+    transition: transform 0.15s ease;
+  }
+  #jumpVal.pop { transform: scale(1.2); color: #7CFC8A; }
+  #jumpVal .unit { font-size: 0.35em; font-weight: 700; }
+  #jumpLabel { font-size: 13px; opacity: 0.85; margin-top: 2px; }
+  #bestBox {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    background: rgba(0,0,0,0.55);
+    border-radius: 12px;
+    padding: 8px 14px;
+    text-align: center;
+    pointer-events: none;
+  }
+  #bestBox .label { font-size: 11px; opacity: 0.8; }
+  #best { font-size: 26px; font-weight: 700; color: #FFD166; }
+  #histBox {
+    position: absolute;
+    top: 10px;
+    left: 12px;
+    background: rgba(0,0,0,0.55);
+    border-radius: 12px;
+    padding: 8px 14px;
+    pointer-events: none;
+    font-size: 13px;
+    line-height: 1.7;
+    min-width: 92px;
+  }
+  #histBox .label { font-size: 11px; opacity: 0.8; }
+  #rating {
+    position: absolute;
+    top: 42%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: clamp(30px, 8vw, 60px);
+    font-weight: 800;
+    color: #FFD166;
+    text-shadow: 0 2px 16px rgba(0,0,0,0.85);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    white-space: nowrap;
+  }
+  #rating.show { opacity: 1; transform: translate(-50%, -80%) scale(1.08); }
+  #status {
+    position: absolute;
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.65);
+    border-radius: 999px;
+    padding: 8px 18px;
+    font-size: 14px;
+    max-width: 92%;
+    text-align: center;
+    pointer-events: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #controls {
+    display: flex;
+    gap: 10px;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    background: #101c2c;
+  }
+  button {
+    flex: 1;
+    border: none;
+    border-radius: 14px;
+    padding: 15px 8px;
+    font-size: 16px;
+    font-weight: 700;
+    font-family: inherit;
+    color: #fff;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  button:active { filter: brightness(0.85); }
+  button:disabled { opacity: 0.4; cursor: default; }
+  #flipBtn, #resetBtn, #heightBtn { background: #35507a; }
+
+  #intro {
+    position: absolute;
+    inset: 0;
+    background: #101c2c;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 24px;
+    z-index: 20;
+  }
+  #intro .icon { font-size: 64px; margin-bottom: 10px; }
+  #intro h2 { font-size: 23px; margin-bottom: 12px; }
+  #intro p { font-size: 14px; line-height: 1.8; opacity: 0.85; max-width: 440px; margin-bottom: 18px; }
+  .heightRow {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 22px;
+    font-size: 16px;
+  }
+  #heightInput {
+    width: 110px;
+    font-size: 22px;
+    font-weight: 700;
+    text-align: center;
+    padding: 10px;
+    border-radius: 12px;
+    border: 2px solid #35507a;
+    background: #182a42;
+    color: #fff;
+    font-family: inherit;
+  }
+  #intro button {
+    flex: none;
+    background: #2fbf71;
+    padding: 16px 48px;
+    font-size: 18px;
+  }
+  #introStatus { margin-top: 14px; font-size: 13px; opacity: 0.7; min-height: 1.2em; max-width: 420px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🦘 ジャンプ力メーター</h1>
+  <span id="playerTag"></span>
+</header>
+
+<div id="stage">
+  <video id="video" playsinline muted></video>
+  <canvas id="canvas"></canvas>
+
+  <div id="resultBox">
+    <div id="jumpVal">0<span class="unit"> cm</span></div>
+    <div id="jumpLabel">さいごのジャンプ</div>
+  </div>
+  <div id="bestBox">
+    <div class="label">さいこうきろく</div>
+    <div id="best">0</div>
+  </div>
+  <div id="histBox">
+    <div class="label">きろく (cm)</div>
+    <div id="hist">-</div>
+  </div>
+  <div id="rating"></div>
+  <div id="status">じゅんびちゅう…</div>
+
+  <div id="intro">
+    <div class="icon">🥅</div>
+    <h2>ジャンプ力メーター</h2>
+    <p>
+      カメラがからだの動きを見て、<b>何cmジャンプしたか</b>を自動で測ります。<br>
+      <b>頭から足まで全身が画面に入る</b>ように、タブレットを3〜4m離して横向きに置いてね。
+    </p>
+    <div class="heightRow">
+      <label for="heightInput">身長</label>
+      <input id="heightInput" type="number" inputmode="numeric" min="80" max="220" value="150">
+      <span>cm</span>
+    </div>
+    <button id="setupBtn">カメラをはじめる</button>
+    <div id="introStatus"></div>
+  </div>
+</div>
+
+<div id="controls">
+  <button id="flipBtn" disabled>🔄 カメラ</button>
+  <button id="heightBtn" disabled>👤 身長変更</button>
+  <button id="resetBtn" disabled>リセット</button>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ---------- DOM ----------
+  var video = document.getElementById('video');
+  var canvas = document.getElementById('canvas');
+  var ctx = canvas.getContext('2d');
+  var jumpValEl = document.getElementById('jumpVal');
+  var bestEl = document.getElementById('best');
+  var histEl = document.getElementById('hist');
+  var statusEl = document.getElementById('status');
+  var ratingEl = document.getElementById('rating');
+  var intro = document.getElementById('intro');
+  var introStatus = document.getElementById('introStatus');
+  var setupBtn = document.getElementById('setupBtn');
+  var heightInput = document.getElementById('heightInput');
+  var playerTag = document.getElementById('playerTag');
+  var flipBtn = document.getElementById('flipBtn');
+  var heightBtn = document.getElementById('heightBtn');
+  var resetBtn = document.getElementById('resetBtn');
+
+  // ---------- state ----------
+  var detector = null;
+  var stream = null;
+  var facing = 'environment';
+  var detecting = false;
+  var heightCm = 150;
+  var best = 0;
+  var history = [];       // last jumps in cm (newest first)
+  var wakeLock = null;
+
+  // measurement state machine
+  var state = 'WAIT';     // WAIT (need person) | CALIB | READY | AIR
+  var baselineHip = null; // standing hip y (px)
+  var scale = null;       // cm per px
+  var pixHeight = null;   // nose->ankle px at calibration
+  var hipBuf = [];        // recent {t, y} while standing
+  var calibBuf = [];
+  var peakHip = null;
+  var airStart = 0;
+  var lostSince = null;
+
+  var MIN_JUMP_CM = 5;
+  var NOSE_ANKLE_RATIO = 0.83; // nose->ankle span ≈ 83% of body height
+
+  // ---------- audio ----------
+  var audioCtx = null;
+  function beep(freq, dur, gainVal) {
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      var osc = audioCtx.createOscillator();
+      var gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(gainVal || 0.15, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + (dur || 0.12));
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + (dur || 0.12));
+    } catch (e) { /* ignore */ }
+  }
+
+  function setStatus(msg) { statusEl.textContent = msg; }
+
+  function showRating(cm, isBest) {
+    var text;
+    if (isBest && best > 0) text = '🏆 しんきろく!';
+    else if (cm >= 50) text = '🚀 ロケットきゅう!';
+    else if (cm >= 35) text = '🔥 スゴイ!';
+    else if (cm >= 20) text = '👍 ナイスジャンプ!';
+    else text = '✨ もっといけるよ!';
+    ratingEl.textContent = text;
+    ratingEl.classList.add('show');
+    setTimeout(function () { ratingEl.classList.remove('show'); }, 1400);
+  }
+
+  // ---------- camera ----------
+  function startCamera() {
+    if (stream) {
+      stream.getTracks().forEach(function (t) { t.stop(); });
+      stream = null;
+    }
+    return navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { facingMode: facing, width: { ideal: 640 }, height: { ideal: 480 } }
+    }).then(function (s) {
+      stream = s;
+      video.srcObject = s;
+      return video.play();
+    }).then(function () {
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+      canvas.classList.toggle('mirror', facing === 'user');
+      resetMeasurement();
+    });
+  }
+
+  function requestWakeLock() {
+    try {
+      if ('wakeLock' in navigator) {
+        navigator.wakeLock.request('screen').then(function (wl) { wakeLock = wl; }).catch(function () {});
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  // ---------- helpers ----------
+  function kp(pose, name) {
+    for (var i = 0; i < pose.keypoints.length; i++) {
+      var k = pose.keypoints[i];
+      if (k.name === name && k.score > 0.25) return k;
+    }
+    return null;
+  }
+  function avgY(a, b) {
+    if (a && b) return (a.y + b.y) / 2;
+    if (a) return a.y;
+    if (b) return b.y;
+    return null;
+  }
+
+  function resetMeasurement() {
+    state = 'WAIT';
+    baselineHip = null;
+    scale = null;
+    pixHeight = null;
+    hipBuf = [];
+    calibBuf = [];
+    peakHip = null;
+    lostSince = null;
+  }
+
+  function recordJump(cm) {
+    var rounded = Math.round(cm);
+    jumpValEl.innerHTML = rounded + '<span class="unit"> cm</span>';
+    jumpValEl.classList.add('pop');
+    setTimeout(function () { jumpValEl.classList.remove('pop'); }, 200);
+    var isBest = rounded > best;
+    if (isBest) best = rounded;
+    bestEl.textContent = best;
+    history.unshift(rounded);
+    if (history.length > 5) history.pop();
+    histEl.textContent = history.join(' / ');
+    showRating(rounded, isBest);
+    if (isBest) {
+      beep(784, 0.12, 0.2);
+      setTimeout(function () { beep(988, 0.12, 0.2); }, 120);
+      setTimeout(function () { beep(1319, 0.25, 0.2); }, 240);
+    } else {
+      beep(600 + rounded * 6, 0.18, 0.18);
+    }
+  }
+
+  // ---------- measurement ----------
+  function processPose(pose, now) {
+    var nose = kp(pose, 'nose');
+    var hipY = avgY(kp(pose, 'left_hip'), kp(pose, 'right_hip'));
+    var ankleY = avgY(kp(pose, 'left_ankle'), kp(pose, 'right_ankle'));
+
+    if (hipY === null || (state !== 'AIR' && (nose === null || ankleY === null))) {
+      // person lost / partially visible
+      if (state === 'AIR') {
+        if (lostSince === null) lostSince = now;
+        else if (now - lostSince > 1500) { resetMeasurement(); setStatus('見うしなったよ。全身が映るように立ってね'); }
+      } else if (state !== 'WAIT') {
+        if (lostSince === null) lostSince = now;
+        else if (now - lostSince > 2000) { resetMeasurement(); setStatus('全身が画面に入るように立ってね'); }
+      } else {
+        setStatus('全身が画面に入るように立ってね');
+      }
+      return;
+    }
+    lostSince = null;
+
+    if (state === 'WAIT') {
+      state = 'CALIB';
+      calibBuf = [];
+      setStatus('そのまま1〜2秒じっとしてね…');
+      return;
+    }
+
+    if (state === 'CALIB') {
+      calibBuf.push({ t: now, hip: hipY, span: ankleY - nose.y });
+      // keep last 1.2s
+      while (calibBuf.length && now - calibBuf[0].t > 1200) calibBuf.shift();
+      if (calibBuf.length >= 8 && now - calibBuf[0].t > 900) {
+        var hips = calibBuf.map(function (s) { return s.hip; });
+        var spans = calibBuf.map(function (s) { return s.span; });
+        var range = Math.max.apply(null, hips) - Math.min.apply(null, hips);
+        var meanSpan = spans.reduce(function (a, b) { return a + b; }, 0) / spans.length;
+        if (meanSpan > 50 && range < meanSpan * 0.03) {
+          baselineHip = hips.reduce(function (a, b) { return a + b; }, 0) / hips.length;
+          pixHeight = meanSpan;
+          scale = (heightCm * NOSE_ANKLE_RATIO) / meanSpan;
+          state = 'READY';
+          setStatus('準備OK! おもいっきりジャンプ!');
+          beep(523, 0.1, 0.12);
+        }
+      }
+      return;
+    }
+
+    if (state === 'READY') {
+      // slow re-calibration while standing still
+      hipBuf.push({ t: now, y: hipY });
+      while (hipBuf.length && now - hipBuf[0].t > 700) hipBuf.shift();
+      if (hipBuf.length >= 5) {
+        var ys = hipBuf.map(function (s) { return s.y; });
+        var r = Math.max.apply(null, ys) - Math.min.apply(null, ys);
+        if (r < pixHeight * 0.02) {
+          var m = ys.reduce(function (a, b) { return a + b; }, 0) / ys.length;
+          baselineHip = 0.9 * baselineHip + 0.1 * m;
+          if (nose && ankleY !== null) {
+            var span = ankleY - nose.y;
+            if (span > 50) {
+              pixHeight = 0.9 * pixHeight + 0.1 * span;
+              scale = (heightCm * NOSE_ANKLE_RATIO) / pixHeight;
+            }
+          }
+        }
+      }
+      // takeoff?
+      if (hipY < baselineHip - pixHeight * 0.09) {
+        state = 'AIR';
+        peakHip = hipY;
+        airStart = now;
+        hipBuf = [];
+      }
+      return;
+    }
+
+    if (state === 'AIR') {
+      if (hipY < peakHip) peakHip = hipY;
+      // landed?
+      if (hipY > baselineHip - pixHeight * 0.045) {
+        var cm = (baselineHip - peakHip) * scale;
+        if (cm >= MIN_JUMP_CM && cm < 150) recordJump(cm);
+        state = 'READY';
+        setStatus('準備OK! おもいっきりジャンプ!');
+        return;
+      }
+      if (now - airStart > 3000) {
+        // too long "in air" -> probably walked away / crouched view change
+        resetMeasurement();
+        setStatus('もういちど立ち位置についてね');
+      }
+      return;
+    }
+  }
+
+  // ---------- drawing ----------
+  var EDGES = [
+    ['left_shoulder','right_shoulder'],['left_shoulder','left_elbow'],['left_elbow','left_wrist'],
+    ['right_shoulder','right_elbow'],['right_elbow','right_wrist'],
+    ['left_shoulder','left_hip'],['right_shoulder','right_hip'],['left_hip','right_hip'],
+    ['left_hip','left_knee'],['left_knee','left_ankle'],
+    ['right_hip','right_knee'],['right_knee','right_ankle']
+  ];
+  function draw(pose) {
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    if (baselineHip !== null) {
+      ctx.strokeStyle = 'rgba(255, 209, 102, 0.9)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 6]);
+      ctx.beginPath();
+      ctx.moveTo(0, baselineHip);
+      ctx.lineTo(canvas.width, baselineHip);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    if (!pose) return;
+    var map = {};
+    pose.keypoints.forEach(function (k) { if (k.score > 0.25) map[k.name] = k; });
+    ctx.strokeStyle = state === 'AIR' ? '#7CFC8A' : '#6EC6FF';
+    ctx.lineWidth = 3;
+    EDGES.forEach(function (e) {
+      var a = map[e[0]], b = map[e[1]];
+      if (a && b) {
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
+    });
+    ctx.fillStyle = ctx.strokeStyle;
+    Object.keys(map).forEach(function (n) {
+      ctx.beginPath();
+      ctx.arc(map[n].x, map[n].y, 4, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    // live rise readout while airborne
+    if (state === 'AIR' && scale && peakHip !== null) {
+      var live = Math.max(0, Math.round((baselineHip - peakHip) * scale));
+      ctx.font = 'bold 28px sans-serif';
+      ctx.fillStyle = '#7CFC8A';
+      ctx.fillText(live + ' cm', 12, canvas.height - 16);
+    }
+  }
+
+  // ---------- detection loop ----------
+  function detectLoop() {
+    if (!detecting || !detector) return;
+    detector.estimatePoses(video).then(function (poses) {
+      var now = performance.now();
+      var pose = (poses && poses.length) ? poses[0] : null;
+      draw(pose);
+      if (pose) processPose(pose, now);
+      else processNoPose(now);
+      if (detecting) requestAnimationFrame(detectLoop);
+    }).catch(function () {
+      if (detecting) setTimeout(detectLoop, 500);
+    });
+  }
+  function processNoPose(now) {
+    if (state === 'WAIT') { setStatus('全身が画面に入るように立ってね'); return; }
+    if (lostSince === null) lostSince = now;
+    else if (now - lostSince > 2000) {
+      resetMeasurement();
+      setStatus('全身が画面に入るように立ってね');
+    }
+  }
+
+  // ---------- UI wiring ----------
+  setupBtn.addEventListener('click', function () {
+    if (!window.isSecureContext) {
+      introStatus.textContent = 'このページはHTTPS(または端末内ファイル)で開く必要があります。';
+      return;
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      introStatus.textContent = 'このブラウザはカメラに対応していません。ChromeかSafariで開いてね。';
+      return;
+    }
+    if (typeof poseDetection === 'undefined' || typeof tf === 'undefined') {
+      introStatus.textContent = 'AIの読み込みに失敗しました。インターネットに接続した状態でページを開き直してね。';
+      return;
+    }
+    var h = parseInt(heightInput.value, 10);
+    if (!(h >= 80 && h <= 220)) {
+      introStatus.textContent = '身長は80〜220cmの間で入力してね。';
+      return;
+    }
+    heightCm = h;
+    playerTag.textContent = '身長 ' + heightCm + 'cm';
+    setupBtn.disabled = true;
+    introStatus.textContent = 'AIモデルを読み込み中…(はじめてのときは少し時間がかかります)';
+
+    var detPromise = detector ? Promise.resolve(detector)
+      : poseDetection.createDetector(poseDetection.SupportedModels.MoveNet, {
+          modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING
+        });
+
+    detPromise.then(function (d) {
+      detector = d;
+      introStatus.textContent = 'カメラを起動中…';
+      return startCamera();
+    }).then(function () {
+      intro.style.display = 'none';
+      flipBtn.disabled = false;
+      heightBtn.disabled = false;
+      resetBtn.disabled = false;
+      detecting = true;
+      detectLoop();
+      requestWakeLock();
+    }).catch(function (err) {
+      setupBtn.disabled = false;
+      var msg = String(err && (err.name || err.message) || err);
+      if (msg.indexOf('NotAllowed') !== -1) {
+        introStatus.textContent = 'カメラの使用が許可されませんでした。ブラウザの設定でカメラを許可してね。';
+      } else if (msg.indexOf('NotFound') !== -1 || msg.indexOf('Overconstrained') !== -1) {
+        introStatus.textContent = 'カメラが見つかりませんでした。';
+      } else {
+        introStatus.textContent = '読み込みに失敗しました。インターネット接続を確認してもう一度試してね。(' + msg + ')';
+      }
+    });
+  });
+
+  heightBtn.addEventListener('click', function () {
+    detecting = false;
+    intro.style.display = 'flex';
+    setupBtn.disabled = false;
+    introStatus.textContent = '';
+    resetMeasurement();
+  });
+
+  resetBtn.addEventListener('click', function () {
+    best = 0;
+    history = [];
+    bestEl.textContent = '0';
+    histEl.textContent = '-';
+    jumpValEl.innerHTML = '0<span class="unit"> cm</span>';
+    resetMeasurement();
+    setStatus('リセットしたよ');
+  });
+
+  flipBtn.addEventListener('click', function () {
+    facing = (facing === 'environment') ? 'user' : 'environment';
+    flipBtn.disabled = true;
+    startCamera().then(function () {
+      flipBtn.disabled = false;
+    }).catch(function () {
+      facing = (facing === 'environment') ? 'user' : 'environment';
+      startCamera().catch(function () {});
+      flipBtn.disabled = false;
+    });
+  });
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') requestWakeLock();
+  });
+})();
+</script>
+</body>
+</html>

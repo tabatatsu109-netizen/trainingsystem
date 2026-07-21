@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>🎥 フォームチェッカー(遅延再生)</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic", Meiryo, sans-serif;
+    background: #0b141f;
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  /* ---------- video stage ---------- */
+  #stage {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+    touch-action: none;
+    overflow: hidden;
+  }
+  #video { display: none; }
+  #canvas { max-width: 100%; max-height: 100%; display: block; }
+
+  #topBar {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: linear-gradient(rgba(0,0,0,0.55), rgba(0,0,0,0));
+    pointer-events: none;
+  }
+  #recDot {
+    display: inline-block;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: #ff4d4d;
+    margin-right: 6px;
+    animation: blink 1.2s infinite;
+    vertical-align: middle;
+  }
+  @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
+  #recInfo { font-size: 12px; opacity: 0.9; }
+  #delayBig {
+    font-size: clamp(26px, 6vw, 40px);
+    font-weight: 800;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+  }
+  #delayBig .u { font-size: 0.5em; font-weight: 700; }
+  #stateTag {
+    font-size: 13px;
+    font-weight: 700;
+    background: rgba(0,0,0,0.5);
+    border-radius: 999px;
+    padding: 4px 12px;
+  }
+  #zoomReset {
+    position: absolute;
+    top: 52px; right: 12px;
+    background: rgba(0,0,0,0.6);
+    border: 1px solid rgba(255,255,255,0.3);
+    color: #fff;
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-size: 13px;
+    font-family: inherit;
+    display: none;
+  }
+  #centerMsg {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0,0,0,0.65);
+    border-radius: 14px;
+    padding: 14px 22px;
+    font-size: 16px;
+    text-align: center;
+    line-height: 1.7;
+    pointer-events: none;
+    display: none;
+    max-width: 90%;
+  }
+  #tapHint {
+    position: absolute;
+    bottom: 8px; left: 12px;
+    font-size: 11px;
+    opacity: 0.65;
+    pointer-events: none;
+    text-shadow: 0 1px 4px #000;
+  }
+  /* ---------- control panel ---------- */
+  #panel {
+    background: #0b141f;
+    padding: 8px 12px calc(10px + env(safe-area-inset-bottom));
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .row { display: flex; gap: 8px; align-items: center; }
+  button {
+    border: none;
+    border-radius: 12px;
+    padding: 12px 6px;
+    font-size: 15px;
+    font-weight: 700;
+    font-family: inherit;
+    color: #fff;
+    background: #2c4a72;
+    cursor: pointer;
+    touch-action: manipulation;
+    flex: 1;
+    white-space: nowrap;
+  }
+  button:active { filter: brightness(0.8); }
+  button.small { padding: 9px 4px; font-size: 13px; border-radius: 10px; }
+  button.on { background: #2fbf71; }
+  #pauseBtn { flex: 1.2; background: #6c4ac9; font-size: 17px; }
+  #liveBtn { background: #c94a4a; }
+  #stepRow { display: none; }
+  #stepRow.show { display: flex; }
+  /* timeline */
+  #tlWrap { position: relative; padding: 2px 0 0; }
+  #timeline {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 34px;
+    background: transparent;
+    outline: none;
+  }
+  #timeline::-webkit-slider-runnable-track {
+    height: 12px;
+    border-radius: 6px;
+    background: var(--track, #22354e);
+  }
+  #timeline::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    background: #fff;
+    border: 4px solid #2fbf71;
+    margin-top: -9px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+  }
+  #timeline::-moz-range-track { height: 12px; border-radius: 6px; background: #22354e; }
+  #timeline::-moz-range-thumb { width: 26px; height: 26px; border-radius: 50%; background: #fff; border: 4px solid #2fbf71; }
+  #tlLabels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    opacity: 0.7;
+    padding: 0 4px;
+  }
+  .chipsLabel { font-size: 12px; opacity: 0.75; flex: none; width: 3.5em; }
+  #customWrap { display: none; align-items: center; gap: 6px; flex: none; }
+  #customWrap.show { display: flex; }
+  #customInput {
+    width: 64px;
+    font-size: 16px;
+    font-weight: 700;
+    text-align: center;
+    padding: 8px 4px;
+    border-radius: 10px;
+    border: 2px solid #2c4a72;
+    background: #14243a;
+    color: #fff;
+    font-family: inherit;
+  }
+  /* ---------- intro ---------- */
+  #intro {
+    position: absolute;
+    inset: 0;
+    background: #0b141f;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 24px;
+    z-index: 20;
+    overflow-y: auto;
+  }
+  #intro .icon { font-size: 60px; margin-bottom: 8px; }
+  #intro h2 { font-size: 22px; margin-bottom: 10px; }
+  #intro p { font-size: 14px; line-height: 1.8; opacity: 0.85; max-width: 460px; margin-bottom: 16px; }
+  #introChips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; max-width: 420px; margin-bottom: 20px; }
+  #introChips button { flex: none; padding: 12px 18px; font-size: 16px; }
+  #startBtn { flex: none; background: #2fbf71; padding: 16px 48px; font-size: 18px; }
+  #introStatus { margin-top: 14px; font-size: 13px; opacity: 0.7; min-height: 1.2em; max-width: 420px; }
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <video id="video" playsinline muted></video>
+  <canvas id="canvas"></canvas>
+
+  <div id="topBar">
+    <span id="recInfo"><span id="recDot"></span><span id="bufText">録画 0秒</span></span>
+    <span id="delayBig">−0.0<span class="u"> 秒前</span></span>
+    <span id="stateTag">LIVE</span>
+  </div>
+  <button id="zoomReset">🔍 等倍にもどす</button>
+  <div id="centerMsg"></div>
+  <div id="tapHint">タップ=一時停止 / 左右スワイプ=さかのぼる / ピンチ=拡大</div>
+
+  <div id="intro">
+    <div class="icon">🎥</div>
+    <h2>フォームチェッカー(遅延再生)</h2>
+    <p>
+      カメラの映像を<b>少し遅れて</b>画面に流します。<br>
+      シュートを打ってから端末に戻ると、ちょうど自分のフォームが再生されます。<br>
+      映像は直近<b>200秒だけ</b>端末内に一時保存され、古いものは自動で消えます(録画ファイルは残りません)。
+    </p>
+    <p style="margin-bottom:6px; font-weight:700; opacity:1;">遅延時間をえらんでください</p>
+    <div id="introChips"></div>
+    <button id="startBtn">📷 撮影スタート</button>
+    <div id="introStatus"></div>
+  </div>
+</div>
+
+<div id="panel">
+  <div class="row" id="stepRow">
+    <button class="small" id="stepBack">◀ 1コマ戻る</button>
+    <button class="small" id="stepFwd">1コマ進む ▶</button>
+  </div>
+  <div class="row">
+    <button class="small" data-back="20">↩ 20秒</button>
+    <button class="small" data-back="10">↩ 10秒</button>
+    <button class="small" data-back="5">↩ 5秒</button>
+    <button id="pauseBtn">⏸ 一時停止</button>
+    <button class="small" id="liveBtn">🔴 ライブへ</button>
+  </div>
+  <div id="tlWrap">
+    <input type="range" id="timeline" min="-200" max="0" step="0.5" value="0">
+    <div id="tlLabels">
+      <span>−200秒</span><span>−150</span><span>−100</span><span>−50</span><span>現在</span>
+    </div>
+  </div>
+  <div class="row">
+    <span class="chipsLabel">速さ</span>
+    <button class="small spd" data-rate="0.25">0.25×</button>
+    <button class="small spd" data-rate="0.5">0.5×</button>
+    <button class="small spd" data-rate="0.75">0.75×</button>
+    <button class="small spd on" data-rate="1">1×</button>
+  </div>
+  <div class="row">
+    <span class="chipsLabel">遅延</span>
+    <button class="small dly" data-d="10">10</button>
+    <button class="small dly" data-d="20">20</button>
+    <button class="small dly on" data-d="30">30</button>
+    <button class="small dly" data-d="60">60</button>
+    <button class="small dly" data-d="90">90</button>
+    <button class="small dly" data-d="120">120</button>
+    <button class="small" id="customBtn">自由</button>
+    <span id="customWrap"><input id="customInput" type="number" inputmode="numeric" min="5" max="200" value="45"><button class="small" id="customSet" style="flex:none; padding:8px 12px;">設定</button></span>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ---------- constants ----------
+  var BUFFER_MS = 200 * 1000;   // keep last 200s
+  var FPS = 12;                 // capture rate
+  var JPEG_Q = 0.55;
+  var MAX_W = 640;
+  var MIN_LAG_MS = 800;         // never show newer than this
+
+  // ---------- DOM ----------
+  var video = document.getElementById('video');
+  var canvas = document.getElementById('canvas');
+  var ctx = canvas.getContext('2d');
+  var stage = document.getElementById('stage');
+  var delayBig = document.getElementById('delayBig');
+  var stateTag = document.getElementById('stateTag');
+  var bufText = document.getElementById('bufText');
+  var centerMsg = document.getElementById('centerMsg');
+  var timeline = document.getElementById('timeline');
+  var pauseBtn = document.getElementById('pauseBtn');
+  var liveBtn = document.getElementById('liveBtn');
+  var stepRow = document.getElementById('stepRow');
+  var zoomReset = document.getElementById('zoomReset');
+  var intro = document.getElementById('intro');
+  var introChips = document.getElementById('introChips');
+  var introStatus = document.getElementById('introStatus');
+  var startBtn = document.getElementById('startBtn');
+  var customBtn = document.getElementById('customBtn');
+  var customWrap = document.getElementById('customWrap');
+  var customInput = document.getElementById('customInput');
+  var customSet = document.getElementById('customSet');
+
+  // ---------- state ----------
+  var frames = [];            // {t, blob} oldest -> newest
+  var stream = null;
+  var capCanvas = document.createElement('canvas');
+  var capCtx = capCanvas.getContext('2d');
+  var capBusy = false;
+  var running = false;
+
+  var delaySec = 30;          // target delay in live mode
+  var mode = 'live';          // 'live' | 'chase'
+  var paused = false;
+  var rate = 1;
+  var playhead = 0;           // absolute time (performance.now clock)
+  var lastTick = 0;
+  var scrubbing = false;      // finger on timeline
+
+  var shownT = -1;
+  var lastBmp = null;
+  var decoding = false;
+
+  var zoom = 1, panX = 0, panY = 0; // pan = center of view in source px
+  var wakeLock = null;
+
+  // ---------- helpers ----------
+  function now() { return performance.now(); }
+
+  function frameIndexFor(t) {
+    var lo = 0, hi = frames.length - 1, ans = -1;
+    while (lo <= hi) {
+      var mid = (lo + hi) >> 1;
+      if (frames[mid].t <= t) { ans = mid; lo = mid + 1; } else { hi = mid - 1; }
+    }
+    return ans;
+  }
+
+  function bufferStart() { return frames.length ? frames[0].t : now(); }
+
+  function setChipOn(list, match) {
+    list.forEach(function (b) { b.classList.toggle('on', match(b)); });
+  }
+  var spdBtns = Array.prototype.slice.call(document.querySelectorAll('.spd'));
+  var dlyBtns = Array.prototype.slice.call(document.querySelectorAll('.dly'));
+
+  // ---------- camera & capture ----------
+  function startCamera() {
+    return navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+    }).then(function (s) {
+      stream = s;
+      video.srcObject = s;
+      return video.play();
+    }).then(function () {
+      var vw = video.videoWidth || 640, vh = video.videoHeight || 480;
+      var scale = Math.min(1, MAX_W / vw);
+      capCanvas.width = Math.round(vw * scale);
+      capCanvas.height = Math.round(vh * scale);
+      canvas.width = capCanvas.width;
+      canvas.height = capCanvas.height;
+    });
+  }
+
+  function captureFrame() {
+    if (!running || capBusy) return;
+    capBusy = true;
+    var t = now();
+    try {
+      capCtx.drawImage(video, 0, 0, capCanvas.width, capCanvas.height);
+      capCanvas.toBlob(function (b) {
+        capBusy = false;
+        if (b) {
+          frames.push({ t: t, blob: b });
+          var cutoff = now() - BUFFER_MS - 1000;
+          while (frames.length && frames[0].t < cutoff) frames.shift();
+        }
+      }, 'image/jpeg', JPEG_Q);
+    } catch (e) { capBusy = false; }
+  }
+
+  function requestWakeLock() {
+    try {
+      if ('wakeLock' in navigator) {
+        navigator.wakeLock.request('screen').then(function (wl) { wakeLock = wl; }).catch(function () {});
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  // ---------- playback ----------
+  function clampPlayhead(n) {
+    var newest = n - MIN_LAG_MS;
+    if (playhead > newest) playhead = newest;
+    // In live mode the playhead may point before the buffer start:
+    // that means we are still building up the delay -> show the countdown.
+    var oldest = (mode === 'live') ? (n - BUFFER_MS) : Math.max(bufferStart(), n - BUFFER_MS);
+    if (playhead < oldest) playhead = oldest;
+  }
+
+  function tick() {
+    if (!running) return;
+    var n = now();
+    var dt = n - lastTick;
+    lastTick = n;
+    if (!paused && !scrubbing) {
+      if (mode === 'live') {
+        playhead = n - delaySec * 1000;
+      } else {
+        playhead += dt * rate;
+        // caught up to the live-delay point at normal speed -> snap back to live
+        if (rate >= 1 && playhead >= n - delaySec * 1000) {
+          playhead = n - delaySec * 1000;
+          mode = 'live';
+        }
+      }
+    }
+    clampPlayhead(n);
+    renderFrame();
+    updateHud(n);
+    requestAnimationFrame(tick);
+  }
+
+  function renderFrame() {
+    var idx = frameIndexFor(playhead);
+    if (idx < 0) { drawWaiting(); return; }
+    var f = frames[idx];
+    if (f.t === shownT || decoding) return;
+    decoding = true;
+    createImageBitmap(f.blob).then(function (bmp) {
+      decoding = false;
+      shownT = f.t;
+      if (lastBmp && lastBmp.close) lastBmp.close();
+      lastBmp = bmp;
+      drawBmp();
+      centerMsg.style.display = 'none';
+    }).catch(function () { decoding = false; });
+  }
+
+  function drawBmp() {
+    if (!lastBmp) return;
+    var W = canvas.width, H = canvas.height;
+    var sw = W / zoom, sh = H / zoom;
+    var sx = Math.min(Math.max(panX - sw / 2, 0), W - sw);
+    var sy = Math.min(Math.max(panY - sh / 2, 0), H - sh);
+    ctx.drawImage(lastBmp, sx, sy, sw, sh, 0, 0, W, H);
+  }
+
+  function drawWaiting() {
+    var W = canvas.width, H = canvas.height;
+    ctx.fillStyle = '#0b141f';
+    ctx.fillRect(0, 0, W, H);
+    var remain = frames.length ? Math.ceil((frames[0].t - playhead) / 1000) : Math.ceil(delaySec);
+    if (remain < 0) remain = 0;
+    centerMsg.style.display = 'block';
+    centerMsg.textContent = '映像をためています… あと約 ' + remain + ' 秒で再生が始まります';
+  }
+
+  function updateHud(n) {
+    var ago = (n - playhead) / 1000;
+    delayBig.innerHTML = '−' + ago.toFixed(1) + '<span class="u"> 秒前</span>';
+    if (!scrubbing) timeline.value = String(-ago);
+    var bufSec = Math.min(200, Math.round((n - bufferStart()) / 1000));
+    bufText.textContent = '録画 ' + bufSec + '秒 / 200秒';
+    var tag;
+    if (paused) tag = '⏸ 一時停止';
+    else if (mode === 'live') tag = '🔴 LIVE(遅延' + delaySec + '秒)';
+    else tag = '▶ 再生中 ' + rate + '×';
+    stateTag.textContent = tag;
+    stepRow.classList.toggle('show', paused);
+    // show available range on the track
+    var pct = Math.round(bufSec / 200 * 100);
+    timeline.style.setProperty('--track',
+      'linear-gradient(to left, #2fbf71 0%, #2fbf71 ' + pct + '%, #22354e ' + pct + '%)');
+  }
+
+  function setPaused(p) {
+    paused = p;
+    pauseBtn.textContent = paused ? '▶ 再生' : '⏸ 一時停止';
+    if (paused && mode === 'live') mode = 'chase';
+  }
+
+  function goLive() {
+    mode = 'live';
+    rate = 1;
+    setPaused(false);
+    setChipOn(spdBtns, function (b) { return b.dataset.rate === '1'; });
+  }
+
+  function setDelay(d) {
+    delaySec = d;
+    goLive();
+    setChipOn(dlyBtns, function (b) { return parseInt(b.dataset.d, 10) === d; });
+  }
+
+  // ---------- controls ----------
+  Array.prototype.forEach.call(document.querySelectorAll('[data-back]'), function (b) {
+    b.addEventListener('click', function () {
+      playhead -= parseInt(b.dataset.back, 10) * 1000;
+      mode = 'chase';
+      shownT = -1;
+    });
+  });
+  spdBtns.forEach(function (b) {
+    b.addEventListener('click', function () {
+      rate = parseFloat(b.dataset.rate);
+      if (rate < 1 && mode === 'live') mode = 'chase';
+      setChipOn(spdBtns, function (x) { return x === b; });
+      if (paused) setPaused(false);
+    });
+  });
+  dlyBtns.forEach(function (b) {
+    b.addEventListener('click', function () { setDelay(parseInt(b.dataset.d, 10)); });
+  });
+  customBtn.addEventListener('click', function () {
+    customWrap.classList.toggle('show');
+  });
+  customSet.addEventListener('click', function () {
+    var v = parseInt(customInput.value, 10);
+    if (v >= 5 && v <= 200) {
+      setDelay(v);
+      setChipOn(dlyBtns, function () { return false; });
+      customWrap.classList.remove('show');
+    }
+  });
+  pauseBtn.addEventListener('click', function () { setPaused(!paused); });
+  liveBtn.addEventListener('click', goLive);
+
+  document.getElementById('stepBack').addEventListener('click', function () { step(-1); });
+  document.getElementById('stepFwd').addEventListener('click', function () { step(1); });
+  function step(dir) {
+    var idx = frameIndexFor(playhead);
+    var ni = idx + dir;
+    if (ni >= 0 && ni < frames.length) {
+      playhead = frames[ni].t;
+      shownT = -1;
+      mode = 'chase';
+    }
+  }
+
+  // timeline
+  timeline.addEventListener('input', function () {
+    scrubbing = true;
+    var ago = -parseFloat(timeline.value);
+    playhead = now() - ago * 1000;
+    mode = 'chase';
+    clampPlayhead(now());
+    shownT = -1;
+    renderFrame();
+    updateHud(now());
+  });
+  timeline.addEventListener('change', function () { scrubbing = false; });
+  timeline.addEventListener('touchend', function () { scrubbing = false; });
+
+  // ---------- gestures on stage ----------
+  var touchState = null;
+  function dist(a, b) { return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY); }
+
+  stage.addEventListener('touchstart', function (e) {
+    if (intro.style.display !== 'none') return;
+    if (e.touches.length === 1) {
+      touchState = { kind: 'one', x: e.touches[0].clientX, y: e.touches[0].clientY,
+                     t: now(), moved: false, startPlayhead: playhead, startPanX: panX, startPanY: panY };
+    } else if (e.touches.length === 2) {
+      touchState = { kind: 'pinch', d0: dist(e.touches[0], e.touches[1]), z0: zoom,
+                     mx: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+                     my: (e.touches[0].clientY + e.touches[1].clientY) / 2,
+                     startPanX: panX, startPanY: panY };
+    }
+  }, { passive: true });
+
+  stage.addEventListener('touchmove', function (e) {
+    if (!touchState) return;
+    e.preventDefault();
+    if (touchState.kind === 'one' && e.touches.length === 1) {
+      var dx = e.touches[0].clientX - touchState.x;
+      var dy = e.touches[0].clientY - touchState.y;
+      if (Math.abs(dx) > 8 || Math.abs(dy) > 8) touchState.moved = true;
+      if (!touchState.moved) return;
+      if (zoom > 1.05) {
+        // pan when zoomed
+        var rect = canvas.getBoundingClientRect();
+        var k = canvas.width / rect.width / zoom;
+        panX = touchState.startPanX - dx * k;
+        panY = touchState.startPanY - dy * k;
+        drawBmp();
+      } else {
+        // scrub: swipe right -> go back
+        var rect2 = stage.getBoundingClientRect();
+        var secPerPx = 30 / rect2.width; // full width = 30s
+        playhead = touchState.startPlayhead - dx * secPerPx * 1000;
+        mode = 'chase';
+        clampPlayhead(now());
+        shownT = -1;
+      }
+    } else if (touchState.kind === 'pinch' && e.touches.length === 2) {
+      var d = dist(e.touches[0], e.touches[1]);
+      zoom = Math.min(4, Math.max(1, touchState.z0 * d / touchState.d0));
+      if (zoom <= 1.02) { zoom = 1; panX = canvas.width / 2; panY = canvas.height / 2; }
+      zoomReset.style.display = zoom > 1 ? 'block' : 'none';
+      drawBmp();
+    }
+  }, { passive: false });
+
+  stage.addEventListener('touchend', function (e) {
+    if (!touchState) return;
+    if (touchState.kind === 'one' && !touchState.moved && now() - touchState.t < 400) {
+      setPaused(!paused);
+    }
+    if (e.touches.length === 0) touchState = null;
+  });
+
+  // mouse fallback (PC)
+  var mouse = null;
+  stage.addEventListener('mousedown', function (e) {
+    if (intro.style.display !== 'none') return;
+    mouse = { x: e.clientX, y: e.clientY, moved: false, startPlayhead: playhead, startPanX: panX, startPanY: panY };
+  });
+  window.addEventListener('mousemove', function (e) {
+    if (!mouse) return;
+    var dx = e.clientX - mouse.x;
+    if (Math.abs(dx) > 6) mouse.moved = true;
+    if (!mouse.moved) return;
+    if (zoom > 1.05) {
+      var rect = canvas.getBoundingClientRect();
+      var k = canvas.width / rect.width / zoom;
+      panX = mouse.startPanX - dx * k;
+      panY = mouse.startPanY - (e.clientY - mouse.y) * k;
+      drawBmp();
+    } else {
+      var rect2 = stage.getBoundingClientRect();
+      playhead = mouse.startPlayhead - dx * (30 / rect2.width) * 1000;
+      mode = 'chase';
+      clampPlayhead(now());
+      shownT = -1;
+    }
+  });
+  window.addEventListener('mouseup', function () {
+    if (mouse && !mouse.moved) setPaused(!paused);
+    mouse = null;
+  });
+  stage.addEventListener('wheel', function (e) {
+    if (intro.style.display !== 'none') return;
+    e.preventDefault();
+    zoom = Math.min(4, Math.max(1, zoom * (e.deltaY < 0 ? 1.15 : 0.87)));
+    if (zoom <= 1.02) { zoom = 1; panX = canvas.width / 2; panY = canvas.height / 2; }
+    zoomReset.style.display = zoom > 1 ? 'block' : 'none';
+    drawBmp();
+  }, { passive: false });
+
+  zoomReset.addEventListener('click', function () {
+    zoom = 1;
+    panX = canvas.width / 2;
+    panY = canvas.height / 2;
+    zoomReset.style.display = 'none';
+    drawBmp();
+  });
+
+  // ---------- intro ----------
+  var PRESETS = [10, 20, 30, 60, 90, 120];
+  PRESETS.forEach(function (d) {
+    var b = document.createElement('button');
+    b.textContent = d + '秒';
+    if (d === 30) b.classList.add('on');
+    b.addEventListener('click', function () {
+      delaySec = d;
+      Array.prototype.forEach.call(introChips.children, function (c) { c.classList.toggle('on', c === b); });
+      setChipOn(dlyBtns, function (x) { return parseInt(x.dataset.d, 10) === d; });
+    });
+    introChips.appendChild(b);
+  });
+
+  startBtn.addEventListener('click', function () {
+    if (!window.isSecureContext) {
+      introStatus.textContent = 'このページはHTTPS(または端末内ファイル)で開く必要があります。';
+      return;
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      introStatus.textContent = 'このブラウザはカメラに対応していません。ChromeかSafariで開いてね。';
+      return;
+    }
+    if (typeof createImageBitmap === 'undefined') {
+      introStatus.textContent = 'このブラウザは対応していません。最新のChromeかSafariで開いてね。';
+      return;
+    }
+    startBtn.disabled = true;
+    introStatus.textContent = 'カメラを起動中…';
+    startCamera().then(function () {
+      intro.style.display = 'none';
+      running = true;
+      panX = canvas.width / 2;
+      panY = canvas.height / 2;
+      lastTick = now();
+      setInterval(captureFrame, 1000 / FPS);
+      requestAnimationFrame(tick);
+      requestWakeLock();
+    }).catch(function (err) {
+      startBtn.disabled = false;
+      var msg = String(err && (err.name || err.message) || err);
+      if (msg.indexOf('NotAllowed') !== -1) {
+        introStatus.textContent = 'カメラの使用が許可されませんでした。ブラウザの設定でカメラを許可してね。';
+      } else {
+        introStatus.textContent = 'カメラを起動できませんでした。(' + msg + ')';
+      }
+    });
+  });
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') requestWakeLock();
+  });
+
+  // debug hook (used by automated tests; harmless in production)
+  window.__rd = {
+    frames: function () { return frames.length; },
+    ago: function () { return (now() - playhead) / 1000; },
+    state: function () { return { mode: mode, paused: paused, rate: rate, delaySec: delaySec, zoom: zoom }; }
+  };
+})();
+</script>
+</body>
+</html>
