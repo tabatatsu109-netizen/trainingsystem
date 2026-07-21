@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0a0c08">
+<title>SPRINT GATE — 検出プロトタイプ</title>
+<style>
+:root{
+  --bg:#0a0c08;
+  --panel:#12150e;
+  --panel2:#1a1e13;
+  --line:#2a3020;
+  --accent:#b8f534;
+  --accent-dim:#7da324;
+  --warn:#f5a534;
+  --danger:#f54f4f;
+  --text:#e8f0dc;
+  --text-dim:#8a9578;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
+  user-select:none;-webkit-user-select:none}
+.num{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-variant-numeric:tabular-nums}
+
+#app{display:flex;flex-direction:column;height:100%;height:100dvh}
+
+/* ===== header ===== */
+header{display:flex;align-items:center;gap:10px;padding:8px 12px;
+  background:var(--panel);border-bottom:1px solid var(--line);flex:none}
+.logo{font-weight:800;letter-spacing:.12em;font-size:14px;color:var(--accent)}
+.logo small{color:var(--text-dim);font-weight:600;letter-spacing:.08em;margin-left:6px;font-size:10px}
+#fps{margin-left:auto;font-size:11px;color:var(--text-dim)}
+#fps b{color:var(--text)}
+
+/* ===== camera stage ===== */
+#stage{position:relative;flex:1;min-height:0;background:#000;overflow:hidden}
+#video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+#overlay{position:absolute;inset:0;width:100%;height:100%;touch-action:none}
+
+/* status banner */
+#status{position:absolute;top:10px;left:50%;transform:translateX(-50%);
+  padding:8px 22px;border-radius:6px;font-weight:800;font-size:16px;letter-spacing:.1em;
+  background:rgba(10,12,8,.82);border:1px solid var(--line);color:var(--text-dim);
+  backdrop-filter:blur(4px);white-space:nowrap;transition:background .15s,color .15s,border-color .15s}
+#status.armed{color:var(--accent);border-color:var(--accent-dim)}
+#status.calib{color:var(--warn);border-color:var(--warn)}
+#status.hit{background:var(--accent);color:#0a0c08;border-color:var(--accent)}
+
+/* detection flash */
+#flash{position:absolute;inset:0;background:var(--accent);opacity:0;pointer-events:none}
+#flash.on{animation:flashAnim .35s ease-out}
+@keyframes flashAnim{0%{opacity:.55}100%{opacity:0}}
+
+/* activation meter */
+#meterWrap{position:absolute;left:10px;bottom:10px;width:150px;
+  background:rgba(10,12,8,.82);border:1px solid var(--line);border-radius:6px;padding:8px 10px;backdrop-filter:blur(4px)}
+#meterWrap .lbl{font-size:9px;letter-spacing:.15em;color:var(--text-dim);margin-bottom:5px}
+#meterBar{position:relative;height:10px;background:var(--panel2);border-radius:3px;overflow:hidden}
+#meterFill{position:absolute;left:0;top:0;bottom:0;width:0%;background:var(--accent-dim);transition:none}
+#meterFill.over{background:var(--accent)}
+#meterThr{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--warn)}
+#meterVal{font-size:10px;color:var(--text-dim);margin-top:4px}
+
+/* big time readout */
+#readout{position:absolute;right:10px;bottom:10px;text-align:right;
+  background:rgba(10,12,8,.82);border:1px solid var(--line);border-radius:6px;
+  padding:8px 14px;backdrop-filter:blur(4px)}
+#readout .lbl{font-size:9px;letter-spacing:.15em;color:var(--text-dim)}
+#bigTime{font-size:38px;font-weight:800;line-height:1.05;color:var(--accent)}
+#bigTime.idle{color:var(--text-dim)}
+
+/* hint */
+#hint{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);
+  font-size:11px;color:var(--text-dim);background:rgba(10,12,8,.7);padding:4px 12px;border-radius:4px;
+  pointer-events:none;white-space:nowrap}
+
+/* ===== controls ===== */
+#controls{flex:none;background:var(--panel);border-top:1px solid var(--line);padding:10px 12px;
+  display:flex;flex-direction:column;gap:10px}
+.row{display:flex;gap:8px;align-items:center}
+button{flex:1;padding:14px 8px;font-size:15px;font-weight:800;letter-spacing:.06em;
+  border:1px solid var(--line);border-radius:8px;background:var(--panel2);color:var(--text);
+  font-family:inherit;cursor:pointer}
+button:active{transform:scale(.97)}
+button.primary{background:var(--accent);color:#0a0c08;border-color:var(--accent)}
+button.primary:disabled{background:var(--panel2);color:var(--text-dim);border-color:var(--line)}
+button:disabled{opacity:.5}
+.slider-row{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--text-dim)}
+.slider-row label{flex:none;width:86px;letter-spacing:.05em}
+.slider-row input[type=range]{flex:1;accent-color:var(--accent);height:28px}
+.slider-row .val{flex:none;width:44px;text-align:right;color:var(--text)}
+
+/* ===== log ===== */
+#logWrap{flex:none;max-height:26vh;overflow-y:auto;background:var(--bg);
+  border-top:1px solid var(--line);-webkit-overflow-scrolling:touch}
+#logWrap h3{font-size:10px;letter-spacing:.2em;color:var(--text-dim);
+  padding:8px 12px 4px;position:sticky;top:0;background:var(--bg)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{font-size:9px;letter-spacing:.15em;color:var(--text-dim);text-align:left;
+  padding:4px 12px;border-bottom:1px solid var(--line);font-weight:600}
+td{padding:7px 12px;border-bottom:1px solid var(--line)}
+td.split{color:var(--accent);font-weight:800;font-size:16px}
+tr.newest td{background:var(--panel2)}
+#empty{padding:14px 12px;font-size:12px;color:var(--text-dim)}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <div class="logo">SPRINT GATE<small>DETECTION PROTO v0.1</small></div>
+    <div id="fps" class="num">-- fps</div>
+  </header>
+
+  <div id="stage">
+    <video id="video" playsinline muted></video>
+    <canvas id="overlay"></canvas>
+    <div id="flash"></div>
+    <div id="status">カメラ停止中</div>
+
+    <div id="meterWrap">
+      <div class="lbl">検出レベル</div>
+      <div id="meterBar">
+        <div id="meterFill"></div>
+        <div id="meterThr"></div>
+      </div>
+      <div id="meterVal" class="num">0%</div>
+    </div>
+
+    <div id="readout">
+      <div class="lbl">区間タイム</div>
+      <div id="bigTime" class="num idle">--.---</div>
+    </div>
+
+    <div id="hint">判定ラインは左右にドラッグで移動</div>
+  </div>
+
+  <div id="controls">
+    <div class="row">
+      <button id="btnStart" class="primary">カメラ起動</button>
+      <button id="btnCalib" disabled>再キャリブレーション</button>
+      <button id="btnReset" disabled>ログ消去</button>
+    </div>
+    <div class="slider-row">
+      <label>検出しきい値</label>
+      <input type="range" id="thrSlider" min="4" max="40" value="12">
+      <span class="val num" id="thrVal">12%</span>
+    </div>
+    <div class="slider-row">
+      <label>ピクセル感度</label>
+      <input type="range" id="senSlider" min="10" max="60" value="28">
+      <span class="val num" id="senVal">28</span>
+    </div>
+  </div>
+
+  <div id="logWrap">
+    <h3>通過ログ</h3>
+    <div id="empty">通過イベントはまだありません。キャリブレーション完了後、ラインを横切ると記録されます。</div>
+    <table id="logTable" style="display:none">
+      <thead><tr><th>#</th><th>検出時刻</th><th>前回からの区間</th><th>fps</th></tr></thead>
+      <tbody id="logBody"></tbody>
+    </table>
+  </div>
+
+</div>
+
+<script>
+"use strict";
+
+/* ================= 設定 ================= */
+const CFG = {
+  stripW: 4,          // 判定ライン幅(処理解像度px)
+  sampleH: 120,       // 縦方向サンプル数
+  pixelThresh: 28,    // ピクセル単位の輝度差しきい値(感度)
+  actThresh: 0.12,    // 発火しきい値(反応ピクセル割合)
+  consecFrames: 2,    // 連続フレーム条件
+  cooldownMs: 2500,   // 検出後の不感時間
+  calibMs: 2000,      // 背景学習時間
+  bgAlpha: 0.015,     // 背景モデル更新率(待機中)
+};
+
+/* ================= 状態 ================= */
+const S = {
+  running: false,
+  mode: "idle",            // idle | calib | armed | cooldown
+  lineRatio: 0.5,          // 判定ライン位置(0-1)
+  bg: null,                // 背景輝度モデル Float32Array
+  calibStart: 0,
+  calibCount: 0,
+  cooldownUntil: 0,
+  prevAct: 0,
+  prevT: 0,
+  consec: 0,
+  lastHitT: null,          // 前回検出時刻(補間後)
+  events: [],
+  fpsTimes: [],
+  dragging: false,
+};
+
+/* ================= DOM ================= */
+const $ = id => document.getElementById(id);
+const video = $("video"), overlay = $("overlay"), octx = overlay.getContext("2d");
+const proc = document.createElement("canvas");
+proc.width = CFG.stripW; proc.height = CFG.sampleH;
+const pctx = proc.getContext("2d", { willReadFrequently: true });
+
+const elStatus=$("status"), elFlash=$("flash"), elFps=$("fps"),
+      elFill=$("meterFill"), elThr=$("meterThr"), elMeterVal=$("meterVal"),
+      elBig=$("bigTime"), elBody=$("logBody"), elTable=$("logTable"), elEmpty=$("empty");
+
+/* ================= カメラ起動 ================= */
+$("btnStart").addEventListener("click", async () => {
+  if (S.running) return;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: "environment",
+        width: { ideal: 1280 }, height: { ideal: 720 },
+        frameRate: { ideal: 60 }
+      }, audio: false
+    });
+    video.srcObject = stream;
+    await video.play();
+    S.running = true;
+    $("btnStart").disabled = true;
+    $("btnCalib").disabled = false;
+    $("btnReset").disabled = false;
+    requestWakeLock();
+    startCalibration();
+    if ("requestVideoFrameCallback" in HTMLVideoElement.prototype) {
+      video.requestVideoFrameCallback(onFrameRVFC);
+    } else {
+      requestAnimationFrame(onFrameRAF);
+    }
+  } catch (e) {
+    setStatus("カメラを起動できません", "");
+    alert("カメラの起動に失敗しました。ブラウザのカメラ許可を確認してください。\n" + e.message);
+  }
+});
+
+$("btnCalib").addEventListener("click", startCalibration);
+$("btnReset").addEventListener("click", () => {
+  S.events = []; S.lastHitT = null;
+  elBody.innerHTML = ""; elTable.style.display = "none"; elEmpty.style.display = "";
+  elBig.textContent = "--.---"; elBig.classList.add("idle");
+});
+
+$("thrSlider").addEventListener("input", e => {
+  CFG.actThresh = e.target.value / 100;
+  $("thrVal").textContent = e.target.value + "%";
+  elThr.style.left = Math.min(100, e.target.value * 2) + "%";
+});
+$("senSlider").addEventListener("input", e => {
+  CFG.pixelThresh = +e.target.value;
+  $("senVal").textContent = e.target.value;
+});
+elThr.style.left = "24%"; // 12% * 2倍スケール表示
+
+/* ================= キャリブレーション ================= */
+function startCalibration() {
+  S.bg = null; S.calibCount = 0;
+  S.calibStart = performance.now();
+  S.mode = "calib"; S.consec = 0;
+  setStatus("キャリブレーション中…", "calib");
+}
+
+/* ================= フレーム処理 ================= */
+function onFrameRVFC(now, meta) {
+  processFrame(now);
+  if (S.running) video.requestVideoFrameCallback(onFrameRVFC);
+}
+function onFrameRAF(now) {
+  processFrame(now);
+  if (S.running) requestAnimationFrame(onFrameRAF);
+}
+
+function processFrame(now) {
+  const vw = video.videoWidth, vh = video.videoHeight;
+  if (!vw) return;
+
+  // fps計測
+  S.fpsTimes.push(now);
+  while (S.fpsTimes.length > 30) S.fpsTimes.shift();
+  if (S.fpsTimes.length > 5) {
+    const fps = 1000 * (S.fpsTimes.length - 1) / (now - S.fpsTimes[0]);
+    elFps.innerHTML = "<b>" + fps.toFixed(0) + "</b> fps";
+  }
+
+  // 判定ライン位置(映像はobject-fit:coverのため表示比率とラインratioを映像座標へ変換)
+  const sx = lineVideoX(vw, vh);
+  pctx.drawImage(video, sx - CFG.stripW / 2, 0, CFG.stripW, vh, 0, 0, CFG.stripW, CFG.sampleH);
+  const img = pctx.getImageData(0, 0, CFG.stripW, CFG.sampleH).data;
+
+  // 輝度配列
+  const n = CFG.stripW * CFG.sampleH;
+  const cur = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const j = i * 4;
+    cur[i] = 0.299 * img[j] + 0.587 * img[j+1] + 0.114 * img[j+2];
+  }
+
+  if (S.mode === "calib") {
+    if (!S.bg) { S.bg = cur.slice(); S.calibCount = 1; }
+    else {
+      for (let i = 0; i < n; i++) S.bg[i] += (cur[i] - S.bg[i]) / (S.calibCount + 1);
+      S.calibCount++;
+    }
+    if (now - S.calibStart >= CFG.calibMs) {
+      S.mode = "armed";
+      setStatus("計測待機 — 通過を検出します", "armed");
+    }
+    drawOverlay(0);
+    return;
+  }
+  if (!S.bg) return;
+
+  // 差分 → 反応ピクセル割合
+  let over = 0;
+  for (let i = 0; i < n; i++) {
+    if (Math.abs(cur[i] - S.bg[i]) > CFG.pixelThresh) over++;
+  }
+  const act = over / n;
+
+  // クールダウン
+  if (S.mode === "cooldown") {
+    if (now >= S.cooldownUntil && act < CFG.actThresh) {
+      S.mode = "armed";
+      setStatus("計測待機 — 通過を検出します", "armed");
+    }
+  } else if (S.mode === "armed") {
+    if (act >= CFG.actThresh) {
+      S.consec++;
+      if (S.consec >= CFG.consecFrames) {
+        // サブフレーム補間:しきい値をまたいだ時刻を線形補間
+        let tCross = now;
+        const span = act - S.prevAct;
+        if (S.prevT && span > 0 && S.prevAct < CFG.actThresh) {
+          const r = (CFG.actThresh - S.prevAct) / span;
+          tCross = S.prevT + r * (now - S.prevT);
+        }
+        onHit(tCross);
+      }
+    } else {
+      S.consec = 0;
+      // 待機中のみ背景をゆっくり更新(照明変化への追従)
+      for (let i = 0; i < n; i++) S.bg[i] += (cur[i] - S.bg[i]) * CFG.bgAlpha;
+    }
+  }
+
+  S.prevAct = act; S.prevT = now;
+
+  // メーター更新
+  const pct = Math.min(100, act * 200); // 50%発火=フルスケール表示
+  elFill.style.width = pct + "%";
+  elFill.classList.toggle("over", act >= CFG.actThresh);
+  elMeterVal.textContent = (act * 100).toFixed(1) + "%";
+
+  drawOverlay(act);
+}
+
+/* ================= 検出イベント ================= */
+function onHit(tCross) {
+  S.mode = "cooldown";
+  S.cooldownUntil = performance.now() + CFG.cooldownMs;
+  S.consec = 0;
+
+  elFlash.classList.remove("on"); void elFlash.offsetWidth; elFlash.classList.add("on");
+  setStatus("通過検出", "hit");
+  setTimeout(() => { if (S.mode === "cooldown") setStatus("クールダウン中…", ""); }, 600);
+
+  const split = S.lastHitT !== null ? (tCross - S.lastHitT) / 1000 : null;
+  S.lastHitT = tCross;
+
+  if (split !== null) {
+    elBig.textContent = split.toFixed(3);
+    elBig.classList.remove("idle");
+  }
+
+  // ログ追加
+  const idx = S.events.length + 1;
+  const d = new Date();
+  const clock = d.toTimeString().slice(0, 8) + "." + String(d.getMilliseconds()).padStart(3, "0");
+  const fps = S.fpsTimes.length > 5
+    ? (1000 * (S.fpsTimes.length - 1) / (S.fpsTimes[S.fpsTimes.length-1] - S.fpsTimes[0])).toFixed(0)
+    : "--";
+  S.events.push({ idx, tCross, clock, split });
+
+  elEmpty.style.display = "none"; elTable.style.display = "";
+  document.querySelectorAll("#logBody tr").forEach(r => r.classList.remove("newest"));
+  const tr = document.createElement("tr");
+  tr.className = "newest";
+  tr.innerHTML = `<td class="num">${idx}</td><td class="num">${clock}</td>` +
+    `<td class="num split">${split !== null ? split.toFixed(3) + " 秒" : "—(基準)"}</td>` +
+    `<td class="num">${fps}</td>`;
+  elBody.prepend(tr);
+
+  if (navigator.vibrate) navigator.vibrate(80);
+}
+
+/* ================= 判定ライン描画・ドラッグ ================= */
+function lineVideoX(vw, vh) {
+  // object-fit:cover の切り抜きを考慮して表示ratio→映像x座標へ変換
+  const dw = overlay.clientWidth, dh = overlay.clientHeight;
+  const scale = Math.max(dw / vw, dh / vh);
+  const cropW = dw / scale;                 // 表示されている映像幅
+  const offX = (vw - cropW) / 2;
+  return Math.max(2, Math.min(vw - 2, offX + S.lineRatio * cropW));
+}
+
+function drawOverlay(act) {
+  const w = overlay.clientWidth, h = overlay.clientHeight;
+  if (overlay.width !== w * devicePixelRatio) {
+    overlay.width = w * devicePixelRatio; overlay.height = h * devicePixelRatio;
+  }
+  octx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+  octx.clearRect(0, 0, w, h);
+
+  const x = S.lineRatio * w;
+  const hot = act >= CFG.actThresh;
+  const col = S.mode === "calib" ? "#f5a534" : (hot ? "#ffffff" : "#b8f534");
+
+  octx.strokeStyle = col;
+  octx.lineWidth = hot ? 4 : 2;
+  octx.shadowColor = col; octx.shadowBlur = hot ? 16 : 8;
+  octx.beginPath(); octx.moveTo(x, 0); octx.lineTo(x, h); octx.stroke();
+  octx.shadowBlur = 0;
+
+  // 上下マーカー
+  octx.fillStyle = col;
+  octx.beginPath(); octx.moveTo(x-8, 0); octx.lineTo(x+8, 0); octx.lineTo(x, 12); octx.fill();
+  octx.beginPath(); octx.moveTo(x-8, h); octx.lineTo(x+8, h); octx.lineTo(x, h-12); octx.fill();
+}
+
+overlay.addEventListener("pointerdown", e => {
+  const x = e.offsetX, lineX = S.lineRatio * overlay.clientWidth;
+  if (Math.abs(x - lineX) < 40) { S.dragging = true; overlay.setPointerCapture(e.pointerId); }
+});
+overlay.addEventListener("pointermove", e => {
+  if (!S.dragging) return;
+  S.lineRatio = Math.min(.95, Math.max(.05, e.offsetX / overlay.clientWidth));
+  if (!S.running) drawOverlay(0);
+});
+overlay.addEventListener("pointerup", e => {
+  if (S.dragging) {
+    S.dragging = false;
+    if (S.running) startCalibration(); // ライン移動後は背景を学習し直す
+  }
+});
+
+/* ================= ユーティリティ ================= */
+function setStatus(text, cls) {
+  elStatus.textContent = text;
+  elStatus.className = cls;
+}
+
+let wakeLock = null;
+async function requestWakeLock() {
+  try {
+    if ("wakeLock" in navigator) {
+      wakeLock = await navigator.wakeLock.request("screen");
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible" && S.running) requestWakeLock();
+      });
+    }
+  } catch (e) { /* 非対応でも動作継続 */ }
+}
+
+/* 初期描画 */
+drawOverlay(0);
+new ResizeObserver(() => drawOverlay(0)).observe(overlay);
+</script>
+</body>
+</html>
