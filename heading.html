@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0d1b2a">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="img/icon-192.png">
+<title>🧠 ヘディング</title>
+<link rel="stylesheet" href="css/app.css">
+<style>
+  .cnt{position:absolute;top:8px;left:50%;transform:translateX(-50%);text-align:center;pointer-events:none;text-shadow:0 2px 12px rgba(0,0,0,.85)}
+  .cnt .v{font-size:clamp(64px,18vw,140px);font-weight:800;line-height:1;color:#7CFC8A}
+  .cnt .v.pop{transform:scale(1.2)}
+  .cnt .l{font-size:13px;opacity:.85}
+  .cnt .warn{color:var(--gold);font-weight:800;font-size:15px;margin-top:4px}
+  .rec{position:absolute;top:10px;right:10px;background:rgba(230,57,70,.9);border-radius:999px;padding:6px 12px;font-weight:800;font-size:14px;pointer-events:none}
+  .rec[hidden]{display:none}
+  .prog{position:absolute;left:10%;right:10%;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.7);border-radius:14px;padding:16px;text-align:center}
+  .prog .bar{height:10px;border-radius:5px;background:rgba(255,255,255,.15);margin-top:10px;overflow:hidden}
+  .prog .bar i{display:block;height:100%;background:var(--accent);width:0}
+  .prog[hidden]{display:none}
+  .contacts{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px}
+  .contacts button{flex:0 0 auto;padding:8px 12px;font-size:13px;background:rgba(255,255,255,.1)}
+  .contacts button.on{background:var(--gold);color:#1a1400}
+  .metrics{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:6px}
+  .metrics .m{background:var(--panel);border-radius:10px;padding:8px 10px}
+  .metrics .m small{display:block;color:var(--dim);font-size:11px}
+  .metrics .m b{font-size:20px;color:var(--gold)}
+  .metrics .m b .u{font-size:12px;color:var(--dim);font-weight:600}
+  .advice{font-size:13px;line-height:1.7;background:rgba(255,209,102,.12);border-left:3px solid var(--gold);padding:8px 10px;border-radius:8px}
+  .scrub{display:flex;align-items:center;gap:8px}
+  .scrub input{flex:1;accent-color:var(--blue)}
+  .scrub button{padding:8px 12px}
+</style>
+</head>
+<body>
+<header>
+  <a href="index.html">← メニュー</a>
+  <h1>🧠 ヘディング</h1>
+  <span class="chip" id="modeChip">かぞえる</span>
+</header>
+
+<div id="stage">
+  <video id="video" playsinline muted></video>
+  <canvas id="canvas"></canvas>
+  <div class="cnt" id="cnt" hidden><div class="v" id="count">0</div><div class="l" id="cntLabel">今回の回数</div><div class="warn" id="capWarn"></div></div>
+  <div class="rec" id="recTag" hidden>● 撮影中 <span id="recSec">0.0</span> 秒</div>
+  <div class="prog" id="prog" hidden><div id="progText">分析中…</div><div class="bar"><i id="progBar"></i></div></div>
+  <div class="status" id="status"></div>
+
+  <div class="intro" id="intro">
+    <div class="icon">🧠</div>
+    <h2>ヘディング</h2>
+    <p><b>かぞえる</b>: ボールが頭に当たった回数をその場で数え、1日の上限を見守ります。<br>
+       <b>フォーム分析</b>: 数秒撮って、打点の高さ・ジャンプ・反り・腕・着地を数字とスローで確認します。<br>
+       どちらも<b>横から、全身が入るように</b>映してください。映像は端末の中だけで処理し、保存しません。</p>
+    <div class="form">
+      <label>モード
+        <div class="seg" id="modeSeg"><button data-mode="count" class="on">かぞえる</button><button data-mode="form">フォーム分析</button></div></label>
+      <label>選手<div id="picker"></div></label>
+      <label id="hLab">身長（打点の高さを cm にするのに使います）<input type="number" id="heightIn" inputmode="numeric" min="80" max="220" value="150"></label>
+      <div class="hint" id="modeHint"></div>
+    </div>
+    <button class="go" id="setupBtn">カメラをはじめる</button>
+    <div class="st" id="introStatus"></div>
+  </div>
+</div>
+
+<div id="controls">
+  <div class="row"><label style="flex:1">選手 <div id="picker2" style="flex:1"></div></label></div>
+  <div class="row" id="countRow">
+    <button class="primary" id="goBtn" disabled>▶ はじめる</button>
+    <button id="plusBtn" disabled>＋1</button><button id="minusBtn" disabled>−1</button>
+    <button class="ghost" id="saveCountBtn" disabled>💾 記録して終了</button>
+  </div>
+  <div class="row" id="formRow" hidden>
+    <button class="primary" id="recBtn" disabled>● 撮影（最大 10 秒）</button>
+    <button class="ghost" id="againBtn" hidden>もう一度撮る</button>
+    <button class="ghost" id="saveFormBtn" hidden>💾 記録する</button>
+  </div>
+  <div id="review" hidden>
+    <div class="scrub"><button id="prevF">◀</button><input type="range" id="scrubIn" min="0" max="0" value="0"><button id="nextF">▶</button><span class="hint" id="frameInfo"></span></div>
+    <div class="contacts" id="contacts"></div>
+    <div class="metrics" id="metrics"></div>
+    <div class="advice" id="advice"></div>
+  </div>
+  <div class="row"><button class="ghost" id="flipBtn" disabled>🔄 カメラ</button><button class="ghost" id="settingsBtn" disabled>設定へ戻る</button><span class="hint" id="perf"></span></div>
+  <div class="hint" id="hint"></div>
+</div>
+
+<script src="js/records.js"></script>
+<script src="js/heading-core.js"></script>
+<script src="js/common.js"></script>
+<script type="module">
+import { createPose, createBall, ballFrom, POSE_CONNECTIONS } from './js/vision.js';
+const HC = window.HeadingCore, R = window.TrainingRecords, $ = id => document.getElementById(id);
+const video = $('video'), canvas = $('canvas'), ctx = canvas.getContext('2d');
+
+// ---------- 設定 ----------
+let mode = localStorage.getItem('ts.heading.mode') || 'count';
+let heightCm = +localStorage.getItem('ts.heading.height') || 150;
+let facing = 'environment';
+const picker = TS.playerPicker($('picker'), () => { heightFromPlayer(); picker2.refresh(); });
+const picker2 = TS.playerPicker($('picker2'), () => { picker.refresh(); heightFromPlayer(); renderCount(); });
+$('heightIn').value = heightCm;
+function heightFromPlayer() {
+  const p = R.playerById(TS.store, picker.get());
+  if (p && p.heightCm) { heightCm = p.heightCm; $('heightIn').value = heightCm; }
+}
+heightFromPlayer();
+function renderIntro() {
+  document.querySelectorAll('#modeSeg button').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
+  $('modeHint').textContent = mode === 'count'
+    ? '選手がボールを頭で当てるたびに数えます。数え間違いは ＋1／−1 で直せます'
+    : '「● 撮影」を押したら、最初に 1 秒まっすぐ立ってから、投げてもらったボールをヘディングしてください（1 本〜数本）';
+  $('modeChip').textContent = mode === 'count' ? 'かぞえる' : 'フォーム分析';
+}
+document.querySelectorAll('#modeSeg button').forEach(b => b.addEventListener('click', () => { mode = b.dataset.mode; localStorage.setItem('ts.heading.mode', mode); renderIntro(); }));
+renderIntro();
+
+// ---------- 共通 ----------
+let vw = 0, vh = 0, pose = null, ball = null, loopOn = false, lastTs = 0;
+const setStatus = s => { $('status').textContent = s; $('status').style.display = s ? '' : 'none'; };
+function tsMs(sec) { let ms = Math.round(sec * 1000); if (ms <= lastTs) ms = lastTs + 1; lastTs = ms; return ms; }
+function drawPose(lm, color) {
+  if (!lm) return;
+  ctx.save(); ctx.strokeStyle = color || '#6EC6FF'; ctx.lineWidth = Math.max(2, vw / 320); ctx.fillStyle = ctx.strokeStyle;
+  for (const c of POSE_CONNECTIONS) {
+    const a = lm[c.start], b = lm[c.end];
+    if (!a || !b || a.visibility < 0.4 || b.visibility < 0.4) continue;
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+  }
+  for (const p of lm) { if (p.visibility >= 0.4) { ctx.beginPath(); ctx.arc(p.x, p.y, ctx.lineWidth * 1.4, 0, Math.PI * 2); ctx.fill(); } }
+  ctx.restore();
+}
+function drawBall(b, color) {
+  if (!b) return;
+  ctx.save(); ctx.strokeStyle = color || '#FFD166'; ctx.lineWidth = Math.max(3, vw / 240);
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 4, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+}
+
+// ---------- かぞえる ----------
+const counter = new HC.HeadingCounter();
+let counting = false, sessionCount = 0, detectBusy = false, perfAcc = 0, perfN = 0;
+function capOf() { const p = R.playerById(TS.store, picker.get()); return p ? (p.headingCap || 20) : 20; }
+function renderCount() {
+  $('count').textContent = sessionCount;
+  const pid = picker.get();
+  if (pid) {
+    const today = R.todayTotal(TS.store, pid, 'heading') + sessionCount, cap = capOf();
+    $('cntLabel').textContent = `今回 ${sessionCount} 回　今日の合計 ${today} / ${cap} 回`;
+    $('capWarn').textContent = today >= cap ? '⚠ 今日の上限に達しました。ここまでにしましょう' : today >= cap * 0.8 ? '上限が近づいています' : '';
+  } else { $('cntLabel').textContent = '今回の回数'; $('capWarn').textContent = ''; }
+}
+function bump() {
+  sessionCount++; renderCount();
+  $('count').classList.add('pop'); setTimeout(() => $('count').classList.remove('pop'), 120);
+  TS.beep(660 + Math.min(sessionCount * 6, 300), 0.1, 0.2);
+  const pid = picker.get();
+  if (pid && R.todayTotal(TS.store, pid, 'heading') + sessionCount === capOf()) { TS.beep(300, 0.4, 0.4, 'square'); }
+}
+async function countLoop() {
+  if (!loopOn || mode !== 'count') return;
+  if (!detectBusy && video.readyState >= 2) {
+    detectBusy = true;
+    const t0 = performance.now(), ms = tsMs(video.currentTime || t0 / 1000);
+    let lm = null, b = null;
+    try {
+      const pr = pose.detectForVideo(video, ms);
+      lm = pr.landmarks && pr.landmarks[0] ? HC.toPx(pr.landmarks[0], vw, vh) : null;
+      b = ballFrom(ball.detectForVideo(video, ms));
+    } catch (e) { console.warn(e); }
+    ctx.drawImage(video, 0, 0, vw, vh);
+    drawPose(lm); drawBall(b);
+    const head = lm ? HC.headOf(lm) : null;
+    if (head) { ctx.save(); ctx.strokeStyle = 'rgba(124,252,138,.8)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(head.x, head.y, head.s, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); }
+    if (counting && counter.push(ms / 1000, b, head)) bump();
+    if (!head) setStatus('全身が映るように立ってください'); else if (!b) setStatus(counting ? 'ボールを見つけたら黄色い丸が付きます' : ''); else if (!counting) setStatus('「▶ はじめる」で数え始めます');
+    else setStatus('');
+    perfAcc += performance.now() - t0; perfN++;
+    if (perfN >= 30) { $('perf').textContent = Math.round(1000 / (perfAcc / perfN)) + ' fps'; perfAcc = 0; perfN = 0; }
+    detectBusy = false;
+  }
+  requestAnimationFrame(countLoop);
+}
+$('goBtn').addEventListener('click', () => {
+  TS.unlockAudio();
+  counting = !counting;
+  $('goBtn').textContent = counting ? '⏸ 止める' : '▶ はじめる';
+  $('goBtn').classList.toggle('danger', counting);
+  if (counting) counter.reset();
+});
+$('plusBtn').addEventListener('click', () => { sessionCount++; renderCount(); });
+$('minusBtn').addEventListener('click', () => { sessionCount = Math.max(0, sessionCount - 1); renderCount(); });
+$('saveCountBtn').addEventListener('click', () => {
+  if (sessionCount > 0) { R.addRecord(TS.store, picker.get(), 'heading', sessionCount); TS.saveStore(); TS.toast(`${sessionCount} 回を記録しました`); }
+  sessionCount = 0; counting = false; $('goBtn').textContent = '▶ はじめる'; $('goBtn').classList.remove('danger'); renderCount();
+});
+
+// ---------- フォーム分析 ----------
+let clip = [], recording = false, recStart = 0, capBusy = false, capCanvas = document.createElement('canvas'), capCtx = capCanvas.getContext('2d');
+let analysis = null, frameIdx = 0, rvfc = 0, clipW = 0, clipH = 0, shownBmp = null, showSeq = 0;
+const MAX_REC = 10, CAP_W = 960;
+function formLoop(now, meta) {
+  if (!loopOn || mode !== 'form') return;
+  if (!analysis) { ctx.drawImage(video, 0, 0, vw, vh); }
+  if (recording) {
+    const t = (meta && typeof meta.mediaTime === 'number') ? meta.mediaTime : now / 1000;
+    if (!recStart) recStart = t;
+    const el = t - recStart;
+    $('recSec').textContent = el.toFixed(1);
+    if (!capBusy) {
+      capBusy = true;
+      capCtx.drawImage(video, 0, 0, capCanvas.width, capCanvas.height);
+      const at = el;
+      capCanvas.toBlob(blob => { if (recording && blob) clip.push({ t: at, blob }); capBusy = false; }, 'image/jpeg', 0.85);
+    }
+    if (el >= MAX_REC) stopRec();
+  }
+  rvfc = video.requestVideoFrameCallback ? video.requestVideoFrameCallback(formLoop) : requestAnimationFrame(n => formLoop(n, null));
+}
+function startRec() {
+  TS.unlockAudio();
+  clip = []; recStart = 0; recording = true; analysis = null;
+  $('review').hidden = true; $('againBtn').hidden = true; $('saveFormBtn').hidden = true;
+  $('recTag').hidden = false; $('recBtn').textContent = '■ 止める'; $('recBtn').classList.add('danger');
+  setStatus('まっすぐ立ってから、ヘディング！');
+  TS.beep(523, 0.1, 0.2);
+}
+function stopRec() {
+  if (!recording) return;
+  recording = false;
+  $('recTag').hidden = true; $('recBtn').textContent = '● 撮影（最大 10 秒）'; $('recBtn').classList.remove('danger');
+  TS.beep(392, 0.15, 0.2);
+  setTimeout(analyze, 150);
+}
+$('recBtn').addEventListener('click', () => { if (recording) stopRec(); else startRec(); });
+$('againBtn').addEventListener('click', () => { analysis = null; frames = []; $('review').hidden = true; $('againBtn').hidden = true; $('saveFormBtn').hidden = true; $('recBtn').hidden = false; setStatus(''); });
+
+let frames = [];   // 分析用 {t, blob, lm, ball, body}（画像は圧縮したまま持ち、見るときだけ展開する）
+async function analyze() {
+  if (clip.length < 10) { setStatus('短すぎました。もう一度撮ってください'); return; }
+  $('prog').hidden = false; $('recBtn').disabled = true;
+  frames = [];
+  lastTs = 0;
+  for (let i = 0; i < clip.length; i++) {
+    const f = clip[i];
+    $('progText').textContent = `分析中… ${i + 1} / ${clip.length} コマ`;
+    $('progBar').style.width = Math.round((i + 1) / clip.length * 100) + '%';
+    let lm = null, b = null, bmp = null;
+    try {
+      bmp = await createImageBitmap(f.blob);
+      const ms = tsMs(f.t + 1);
+      const pr = pose.detectForVideo(bmp, ms);
+      lm = pr.landmarks && pr.landmarks[0] ? HC.toPx(pr.landmarks[0], bmp.width, bmp.height) : null;
+      b = ballFrom(ball.detectForVideo(bmp, ms));
+    } catch (e) { console.warn(e); }
+    if (bmp) { clipW = bmp.width; clipH = bmp.height; bmp.close(); }
+    frames.push({ t: f.t, blob: f.blob, lm, ball: b, body: lm ? HC.bodyOf(lm) : null });
+    if (i % 4 === 3) await new Promise(r => setTimeout(r, 0));
+  }
+  clip = [];
+  analysis = HC.analyzeClip(frames, { heightCm });
+  $('prog').hidden = true; $('recBtn').disabled = false; $('recBtn').hidden = true;
+  $('againBtn').hidden = false; $('saveFormBtn').hidden = analysis.contacts.length === 0;
+  showReview();
+}
+const CONTACT_JA = { forehead: '額（おでこ）', top: '頭のてっぺん', low: '顔・首' };
+function showReview() {
+  const cs = analysis.contacts;
+  $('review').hidden = false;
+  $('scrubIn').max = frames.length - 1;
+  $('contacts').innerHTML = cs.length ? cs.map((c, i) => `<button data-i="${i}">${i + 1} 本目 ${c.t.toFixed(2)}s</button>`).join('') : '<span class="hint">当たった瞬間が見つかりませんでした。ボールと全身が映っているか、明るさを確かめてもう一度</span>';
+  $('contacts').querySelectorAll('button').forEach(b => b.addEventListener('click', () => selectContact(+b.dataset.i)));
+  if (cs.length) selectContact(0); else { showFrame(0); $('metrics').innerHTML = ''; $('advice').textContent = ''; }
+  setStatus(cs.length ? `${cs.length} 本 見つかりました。◀ ▶ でコマ送りできます` : '');
+}
+let curContact = -1;
+function selectContact(i) {
+  curContact = i;
+  const c = analysis.contacts[i];
+  $('contacts').querySelectorAll('button').forEach(b => b.classList.toggle('on', +b.dataset.i === i));
+  const m = [], u = (v, unit) => `${v}<span class="u"> ${unit}</span>`;
+  if (c.contactHeightCm != null) m.push(['打点の高さ', u(c.contactHeightCm, 'cm')]);
+  if (c.jumpCm != null) m.push(['ジャンプ', u(c.jumpCm, 'cm')]);
+  m.push(['当てた場所', CONTACT_JA[c.contact] || '—']);
+  if (c.takeoffToContactSec != null) m.push(['踏み切り→当たる', u(c.takeoffToContactSec.toFixed(2), '秒')]);
+  if (c.backLeanDeg != null) m.push(['上体の反り', u(c.backLeanDeg, '°')]);
+  if (c.leanAtContactDeg != null) m.push(['当たる瞬間の傾き', u(c.leanAtContactDeg, '°')]);
+  if (c.elbowRiseCm != null) m.push(['肘の高さ（肩から）', u((c.elbowRiseCm > 0 ? '+' : '') + c.elbowRiseCm, 'cm')]);
+  if (c.landingKneeDeg != null) m.push(['着地の膝', u(c.landingKneeDeg, '°')]);
+  $('metrics').innerHTML = m.map(x => `<div class="m"><small>${x[0]}</small><b>${x[1]}</b></div>`).join('');
+  const adv = [];
+  if (c.contact === 'top') adv.push('頭のてっぺんに当たっています。額（おでこ）で当てるように、ボールを最後まで見ましょう。');
+  if (c.contact === 'low') adv.push('当たる位置が低め。ボールに対して踏み込み、額で迎えにいきましょう。');
+  if (c.contact === 'forehead') adv.push('額でしっかり当てられています。');
+  if (c.backLeanDeg != null && c.backLeanDeg < 8) adv.push('上体の反りが小さめ。当たる前に胸を張って反り、振り出すと強いヘディングになります。');
+  if (c.elbowRiseCm != null && c.elbowRiseCm < -5) adv.push('腕が下がっています。両腕を振り上げてバランスを取ると、空中で安定します。');
+  if (c.takeoffToContactSec != null && c.takeoffToContactSec < 0.12) adv.push('踏み切りが遅め。少し早めにジャンプして、最高点で当てましょう。');
+  if (c.landingKneeDeg != null && c.landingKneeDeg > 165) adv.push('着地で膝が伸びています。膝を曲げてやわらかく着地するとケガの予防になります。');
+  if (c.jumpCm != null && c.jumpCm < 5) adv.push('その場のヘディングです。ジャンプヘッドでは打点がさらに上がります。');
+  $('advice').textContent = adv.join(' ');
+  showFrame(c.frame);
+}
+async function showFrame(i) {
+  frameIdx = Math.max(0, Math.min(frames.length - 1, i));
+  $('scrubIn').value = frameIdx;
+  const f = frames[frameIdx];
+  if (!f) return;
+  $('frameInfo').textContent = `${f.t.toFixed(2)}s`;
+  const seq = ++showSeq;
+  let bmp = null;
+  try { bmp = await createImageBitmap(f.blob); } catch (e) { /* 展開できなければ骨格だけ描く */ }
+  if (seq !== showSeq) { if (bmp) bmp.close(); return; }   // 送りが速いときは最後の 1 枚だけ描く
+  if (shownBmp) shownBmp.close();
+  shownBmp = bmp;
+  if (canvas.width !== clipW && clipW) { canvas.width = clipW; canvas.height = clipH; vw = clipW; vh = clipH; }
+  if (bmp) ctx.drawImage(bmp, 0, 0); else { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, vw, vh); }
+  drawPose(f.lm, '#6EC6FF'); drawBall(f.ball);
+  const ref = analysis && analysis.ref;
+  if (ref) {
+    ctx.save(); ctx.setLineDash([8, 6]); ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.beginPath(); ctx.moveTo(0, ref.groundY); ctx.lineTo(vw, ref.groundY); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,209,102,.8)'; ctx.beginPath(); ctx.moveTo(0, ref.headTop); ctx.lineTo(vw, ref.headTop); ctx.stroke();
+    ctx.setLineDash([]); ctx.fillStyle = '#FFD166'; ctx.font = `bold ${Math.round(vh / 32)}px sans-serif`; ctx.fillText('立ったときの頭', 8, ref.headTop - 6);
+    const c = curContact >= 0 ? analysis.contacts[curContact] : null;
+    if (c && c.frame === frameIdx && c.ball && c.contactHeightCm != null) {
+      ctx.strokeStyle = '#7CFC8A'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(c.ball.x, c.ball.y); ctx.lineTo(c.ball.x, ref.groundY); ctx.stroke();
+      ctx.fillStyle = '#7CFC8A'; ctx.font = `bold ${Math.round(vh / 22)}px sans-serif`; ctx.fillText(`${c.contactHeightCm} cm`, c.ball.x + 10, (c.ball.y + ref.groundY) / 2);
+    }
+    ctx.restore();
+  }
+}
+$('scrubIn').addEventListener('input', () => showFrame(+$('scrubIn').value));
+$('prevF').addEventListener('click', () => showFrame(frameIdx - 1));
+$('nextF').addEventListener('click', () => showFrame(frameIdx + 1));
+$('saveFormBtn').addEventListener('click', () => {
+  const cs = analysis.contacts, pid = picker.get();
+  R.addRecord(TS.store, pid, 'heading', cs.length);
+  const hs = cs.map(c => c.contactHeightCm).filter(v => v != null), js = cs.map(c => c.jumpCm).filter(v => v != null);
+  if (hs.length) R.addRecord(TS.store, pid, 'headHeight', Math.max(...hs));
+  if (js.length) R.addRecord(TS.store, pid, 'headJump', Math.max(...js));
+  TS.saveStore();
+  TS.toast(`記録しました（${cs.length} 本${hs.length ? '・打点 ' + Math.max(...hs) + 'cm' : ''}）`);
+  $('saveFormBtn').hidden = true;
+});
+
+// ---------- 開始 ----------
+function onCamera() {
+  vw = video.videoWidth; vh = video.videoHeight;
+  canvas.width = vw; canvas.height = vh;
+  const k = Math.min(1, CAP_W / vw);
+  capCanvas.width = Math.round(vw * k); capCanvas.height = Math.round(vh * k);
+}
+$('setupBtn').addEventListener('click', async () => {
+  TS.unlockAudio();
+  const h = parseInt($('heightIn').value, 10);
+  if (!(h >= 80 && h <= 220)) { $('introStatus').textContent = '身長は 80〜220cm で入力してください'; return; }
+  heightCm = h; localStorage.setItem('ts.heading.height', h);
+  const p = R.playerById(TS.store, picker.get()); if (p) { p.heightCm = h; TS.saveStore(); }
+  $('setupBtn').disabled = true;
+  try {
+    $('introStatus').textContent = 'AI を読み込み中…（はじめてのときは少し時間がかかります）';
+    if (!pose || pose._kind !== (mode === 'form' ? 'full' : 'lite')) {
+      if (pose) { pose.close(); pose = null; }
+      pose = await createPose(mode === 'form' ? 'full' : 'lite', 'VIDEO'); pose._kind = mode === 'form' ? 'full' : 'lite';
+    }
+    if (!ball) ball = await createBall('VIDEO');
+    $('introStatus').textContent = 'カメラを起動中…';
+    await TS.startCamera(video, { facing, fps: 60, width: 1280, height: 720 });
+    onCamera();
+    $('intro').style.display = 'none';
+    ['goBtn', 'plusBtn', 'minusBtn', 'saveCountBtn', 'recBtn', 'flipBtn', 'settingsBtn'].forEach(id => { $(id).disabled = false; });
+    picker2.refresh();
+    $('countRow').hidden = mode !== 'count'; $('formRow').hidden = mode !== 'form'; $('cnt').hidden = mode !== 'count';
+    $('hint').textContent = mode === 'count' ? '横から全身が入るように。ボールは白より色付きのほうが見つけやすいです' : '横から全身が入るように。撮影の最初に 1 秒まっすぐ立つと、身長から高さを cm にできます';
+    renderIntro(); renderCount();
+    loopOn = true; lastTs = 0;
+    if (mode === 'count') countLoop(); else formLoop(performance.now(), null);
+    TS.keepAwake();
+  } catch (err) {
+    console.error(err);
+    $('introStatus').textContent = String(err && err.name || '').indexOf('Not') === 0 || !window.isSecureContext ? TS.cameraError(err) : 'AI の読み込みに失敗しました。ページを開き直してください（' + (err && err.message || err) + '）';
+  }
+  $('setupBtn').disabled = false;
+});
+$('settingsBtn').addEventListener('click', () => { loopOn = false; if (rvfc && video.cancelVideoFrameCallback) video.cancelVideoFrameCallback(rvfc); analysis = null; frames = []; $('review').hidden = true; $('intro').style.display = 'flex'; });
+$('flipBtn').addEventListener('click', async () => {
+  facing = facing === 'environment' ? 'user' : 'environment';
+  try { await TS.startCamera(video, { facing, fps: 60, width: 1280, height: 720 }); onCamera(); } catch (e) { facing = facing === 'environment' ? 'user' : 'environment'; }
+});
+window.__hd = () => ({ clip: clip.length, frames: frames.length, recording, capBusy, loopOn, mode, analysis: !!analysis });
+TS.registerSW();
+</script>
+</body>
+</html>

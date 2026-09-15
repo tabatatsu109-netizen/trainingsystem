@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0d1b2a">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="img/icon-192.png">
+<title>⏱ タイム計測</title>
+<link rel="stylesheet" href="css/app.css">
+<style>
+  #canvas{cursor:grab}
+  .meters{position:absolute;left:10px;top:10px;display:flex;flex-direction:column;gap:6px;pointer-events:none}
+  .meter{background:rgba(0,0,0,.55);border-radius:10px;padding:6px 10px;font-size:12px;min-width:150px}
+  .meter .bar{height:6px;border-radius:3px;background:rgba(255,255,255,.15);margin-top:4px;overflow:hidden}
+  .meter .bar i{display:block;height:100%;background:var(--blue);width:0}
+  .meter.hit{outline:2px solid #7CFC8A}
+  .fps{position:absolute;right:10px;top:10px;font-size:11px;color:var(--dim);background:rgba(0,0,0,.45);border-radius:8px;padding:4px 8px;pointer-events:none}
+  .ready{position:absolute;top:10px;left:50%;transform:translateX(-50%);font-size:20px;font-weight:800;padding:8px 18px;border-radius:999px;background:rgba(0,0,0,.6);pointer-events:none}
+  .ready.run{background:rgba(230,57,70,.85)}
+  .ready.ok{background:rgba(47,191,113,.85);color:#06200f}
+  .ready.arm{background:rgba(255,209,102,.9);color:#1a1400}
+  .runs{max-height:120px;overflow-y:auto}
+</style>
+</head>
+<body>
+<header>
+  <a href="index.html">← メニュー</a>
+  <h1>⏱ タイム計測</h1>
+  <span class="chip" id="evChip">10m</span>
+</header>
+
+<div id="stage">
+  <video id="video" playsinline muted></video>
+  <canvas id="canvas"></canvas>
+  <div class="meters" id="meters" hidden></div>
+  <div class="fps" id="fps"></div>
+  <div class="ready" id="ready">準備中…</div>
+  <div class="status" id="status">線を地面の目印に合わせてください</div>
+
+  <div class="result" id="result" hidden>
+    <div class="t" id="resT">0.00<span class="u"> 秒</span></div>
+    <div class="sub" id="resSub"></div>
+    <div class="row"><button class="primary" id="resSave">💾 記録する</button><button class="ghost" id="resDrop">やり直し（記録しない）</button></div>
+  </div>
+
+  <div class="intro" id="intro">
+    <div class="icon">⏱</div>
+    <h2>タイム計測</h2>
+    <p>光電管と同じ考え方で、<b>画面に引いた線を体が横切った瞬間</b>を捉えます。<br>
+       スマホを三脚に横向きで固定し、<b>走路を真横から</b>映してください。線の位置にコーンを置くと合わせやすいです。</p>
+    <div class="form">
+      <label>種目
+        <div class="seg" id="evSeg">
+          <button data-ev="sprint10" class="on">10m</button><button data-ev="sprint20">20m</button><button data-ev="sprint30">30m</button><button data-ev="agility505">505</button>
+        </div></label>
+      <label id="modeLab">スタートの取り方
+        <div class="seg" id="modeSeg">
+          <button data-mode="lines" class="on">スタート線を切ったら</button><button data-mode="signal">合図の音で</button>
+        </div></label>
+      <div class="hint" id="modeHint"></div>
+      <label>選手<div id="picker"></div></label>
+    </div>
+    <button class="go" id="setupBtn">カメラをはじめる</button>
+    <div class="st" id="introStatus"></div>
+  </div>
+</div>
+
+<div id="controls">
+  <div class="row"><label style="flex:1">選手 <div id="picker2" style="flex:1"></div></label></div>
+  <div class="row">
+    <button class="primary" id="armBtn" disabled>▶ 計測を待つ</button>
+    <button id="signalBtn" disabled hidden>📣 合図</button>
+    <button id="bgBtn" disabled>背景を覚え直す</button>
+    <button id="testBtn" disabled>テスト</button>
+  </div>
+  <div class="row">
+    <label>感度 <input type="range" id="sens" min="12" max="45" value="26" style="width:110px"></label>
+    <label><input type="checkbox" id="autoSave" checked> 自動で記録</label>
+    <button class="ghost" id="flipBtn" disabled>🔄 カメラ</button>
+    <button class="ghost" id="settingsBtn" disabled>設定へ戻る</button>
+  </div>
+  <div class="hint" id="hint">線は左右にドラッグで動かせます。上下の横線は体を見る高さ（腰〜胸）です。</div>
+  <div class="list runs" id="runs"></div>
+</div>
+
+<script src="js/records.js"></script>
+<script src="js/timing-core.js"></script>
+<script src="js/common.js"></script>
+<script>
+(function () {
+  'use strict';
+  var TC = window.TimingCore, R = window.TrainingRecords;
+  var $ = function (id) { return document.getElementById(id); };
+  var video = $('video'), canvas = $('canvas'), ctx = canvas.getContext('2d');
+  var EVENTS = { sprint10: { label: '10m', dist: 10 }, sprint20: { label: '20m', dist: 20 }, sprint30: { label: '30m', dist: 30 }, agility505: { label: '505', dist: 5 } };
+
+  // ---------- 設定 ----------
+  var ev = localStorage.getItem('ts.timing.ev') || 'sprint10';
+  var mode = localStorage.getItem('ts.timing.mode') || 'lines';
+  var facing = 'environment';
+  var picker = TS.playerPicker($('picker'), function () { picker2.refresh(); renderRuns(); });
+  var picker2 = TS.playerPicker($('picker2'), function () { picker.refresh(); renderRuns(); });
+  function renderIntro() {
+    document.querySelectorAll('#evSeg button').forEach(function (b) { b.classList.toggle('on', b.dataset.ev === ev); });
+    document.querySelectorAll('#modeSeg button').forEach(function (b) { b.classList.toggle('on', b.dataset.mode === mode); });
+    $('modeLab').style.display = ev === 'agility505' ? 'none' : '';
+    $('modeHint').textContent = ev === 'agility505'
+      ? '505: 助走して計測線を切ったらスタート → 5m先の折り返し線で切り返し → 計測線に戻ったらゴール。2本の線を5m離して映します'
+      : mode === 'lines'
+        ? 'スタート線とゴール線の両方を映します（10mが目安。線が2本とも画面に入る距離に置く）'
+        : '「📣 合図」の音でスタート。ゴール線だけ映せばよいので 20m・30m 向き。反応時間を含んだタイムになります';
+    $('evChip').textContent = EVENTS[ev].label;
+  }
+  document.querySelectorAll('#evSeg button').forEach(function (b) { b.addEventListener('click', function () { ev = b.dataset.ev; localStorage.setItem('ts.timing.ev', ev); renderIntro(); }); });
+  document.querySelectorAll('#modeSeg button').forEach(function (b) { b.addEventListener('click', function () { mode = b.dataset.mode; localStorage.setItem('ts.timing.mode', mode); renderIntro(); }); });
+  renderIntro();
+
+  // ---------- 線の位置（映像の幅・高さに対する 0〜1。種目ごとに覚える） ----------
+  var lines = null;   // {a: 線1 x, b: 線2 x, top, bottom}
+  function lineKey() { return 'ts.timing.lines.' + ev + '.' + (mode === 'signal' && ev !== 'agility505' ? 'signal' : 'lines'); }
+  function loadLines() {
+    try { lines = JSON.parse(localStorage.getItem(lineKey())); } catch (e) { lines = null; }
+    if (!lines || typeof lines.a !== 'number') lines = { a: 0.25, b: 0.75, top: 0.35, bottom: 0.62 };
+    if (useOneLine()) lines.a = lines.b;
+  }
+  function saveLines() { localStorage.setItem(lineKey(), JSON.stringify(lines)); }
+  function useOneLine() { return ev !== 'agility505' && mode === 'signal'; }
+  function lineNames() {
+    if (ev === 'agility505') return ['計測線', '折り返し'];
+    return useOneLine() ? ['', 'ゴール'] : ['スタート', 'ゴール'];
+  }
+
+  // ---------- 検出 ----------
+  var ROWS = 48, COLS = 3, GAP = 0.02;   // 帯の行数・列数、左右の帯の間隔（幅に対して）
+  var work = document.createElement('canvas'); work.width = COLS * 6; work.height = ROWS;
+  var wctx = work.getContext('2d', { willReadFrequently: true });
+  var diffs = [];   // 線ごとに [a, c, b] の StripDiff
+  var gates = [];
+  var occ = [[0, 0, 0], [0, 0, 0]];
+  var timer = null, testMode = false, armed = false, running = false;
+  var vw = 0, vh = 0, frames = 0, fpsAt = 0, fpsVal = 0, mediaOffset = 0, lastT = 0;
+  var hitFlash = [0, 0];
+
+  function sens() { return +$('sens').value; }
+  function makeDetectors() {
+    diffs = [0, 1].map(function () { return [0, 1, 2].map(function () { return new TC.StripDiff({ thr: sens() }); }); });
+    gates = [new TC.Gate(), new TC.Gate()];
+  }
+  $('sens').addEventListener('input', function () { diffs.forEach(function (d) { d.forEach(function (s) { s.thr = sens(); }); }); });
+  function makeTimer() {
+    var dir = lines.b >= lines.a ? 1 : -1;
+    if (ev === 'agility505') timer = new TC.Agility505({ dir: dir });
+    else timer = new TC.SprintTimer({ mode: useOneLine() ? 'signal' : 'lines', dir: dir, minSec: 0.6 });
+    armed = false; running = false;
+    showReady();
+  }
+  function resetBackground() { diffs.forEach(function (d) { d.forEach(function (s) { s.reset(); }); }); gates.forEach(function (g) { g.reset(); }); }
+
+  // 1 コマ: 線ごとに 3 本の帯を小さく描き写して、背景との違いを見る
+  function sample(t) {
+    var bandY = lines.top * vh, bandH = Math.max(8, (lines.bottom - lines.top) * vh);
+    var idx = useOneLine() ? [1] : [0, 1];
+    idx.forEach(function (li) {
+      var x = (li === 0 ? lines.a : lines.b) * vw, d = GAP * vw;
+      [x - d, x, x + d].forEach(function (sx, k) {
+        var sxi = Math.max(0, Math.min(vw - COLS, Math.round(sx - COLS / 2)));
+        wctx.drawImage(video, sxi, bandY, COLS, bandH, k * COLS * 2, 0, COLS, ROWS);
+      });
+      var img = wctx.getImageData(0, 0, COLS * 6, ROWS).data;
+      for (var k = 0; k < 3; k++) {
+        var px = new Uint8ClampedArray(ROWS * COLS * 4);
+        for (var r = 0; r < ROWS; r++) for (var c = 0; c < COLS; c++) {
+          var src = (r * COLS * 6 + k * COLS * 2 + c) * 4, dst = (r * COLS + c) * 4;
+          px[dst] = img[src]; px[dst + 1] = img[src + 1]; px[dst + 2] = img[src + 2]; px[dst + 3] = 255;
+        }
+        occ[li][k] = diffs[li][k].update(px, ROWS, COLS);
+      }
+      var cross = gates[li].update(t, occ[li][0], occ[li][1], occ[li][2]);
+      if (cross) {
+        hitFlash[li] = performance.now();
+        if (testMode) { TS.beep(li === 0 ? 660 : 990, 0.08, 0.15); }
+        else onCross(li, cross, t);
+      }
+      if (ev === 'agility505' && li === 1 && !testMode && timer) {
+        var tp = timer.turnPresence(t, occ[1][1]);
+        if (tp) { TS.beep(880, 0.08, 0.15); setStatus('折り返し OK!'); }
+      }
+    });
+    if (timer && !testMode) {
+      var to = timer.tick(t);
+      if (to) { running = false; setStatus('時間切れ。もう一度どうぞ'); showReady(); }
+    }
+  }
+  function onCross(li, cross, t) {
+    if (!timer) return;
+    var r;
+    if (ev === 'agility505') r = li === 0 ? timer.onCross(cross) : null;
+    else r = timer.onCross(li === 0 ? 'start' : 'finish', cross);
+    if (!r) return;
+    if (r.type === 'start') { running = true; TS.beep(523, 0.1, 0.25); setStatus('スタート！'); showReady(); }
+    else if (r.type === 'finish') { running = false; finished(r); }
+    else if (r.type === 'invalid') { running = false; setStatus('折り返し線まで届いていません。もう一度'); TS.beep(200, 0.3, 0.3, 'square'); showReady(); }
+  }
+  function finished(r) {
+    TS.beep(784, 0.12, 0.3); setTimeout(function () { TS.beep(1175, 0.25, 0.3); }, 120);
+    lastResult = r;
+    $('resT').innerHTML = TS.fmtSec(r.time) + '<span class="u"> 秒</span>';
+    var sub = EVENTS[ev].label + (ev === 'agility505' ? ' アジリティ' : ' スプリント');
+    if (r.split != null) sub += '　折り返しまで ' + TS.fmtSec(r.split) + ' 秒';
+    var pid = picker.get(), best = pid ? R.best(TS.store, pid, ev) : null;
+    if (best) sub += '　これまでのベスト ' + TS.fmtSec(best.value);
+    if (best && r.time < best.value) sub += '　🏆 新記録!';
+    $('resSub').textContent = sub;
+    if ($('autoSave').checked) { saveResult(); $('resSave').textContent = '✓ 記録しました'; $('resSave').disabled = true; }
+    else { $('resSave').textContent = '💾 記録する'; $('resSave').disabled = false; }
+    $('result').hidden = false;
+    setStatus('');
+  }
+  var lastResult = null;
+  function saveResult() {
+    if (!lastResult) return;
+    R.addRecord(TS.store, picker.get(), ev, lastResult.time);
+    TS.saveStore();
+    renderRuns();
+  }
+  $('resSave').addEventListener('click', function () { saveResult(); $('resSave').textContent = '✓ 記録しました'; $('resSave').disabled = true; });
+  $('resDrop').addEventListener('click', closeResult);
+  function closeResult() {
+    $('result').hidden = true;
+    lastResult = null;
+    if (timer) { timer.reset(); if (ev !== 'agility505' && !useOneLine()) armed = false; }
+    showReady();
+  }
+  $('result').addEventListener('click', function (e) { if (e.target === $('result')) closeResult(); });
+
+  // ---------- 合図スタート ----------
+  var signalTimer = 0;
+  $('signalBtn').addEventListener('click', function () {
+    if (signalTimer) return;
+    TS.unlockAudio();
+    $('signalBtn').disabled = true;
+    setStatus('位置について…'); TS.beep(440, 0.15, 0.2);
+    signalTimer = setTimeout(function () {
+      setStatus('よーい…'); TS.beep(440, 0.15, 0.2);
+      signalTimer = setTimeout(function () {
+        var perf = TS.bang();
+        timer.go(perf / 1000 + mediaOffset);
+        running = true;
+        setStatus('ドン！'); showReady();
+        signalTimer = 0; $('signalBtn').disabled = false;
+      }, 1200 + Math.random() * 1300);
+    }, 1000);
+  });
+
+  // ---------- 状態表示 ----------
+  function setStatus(s) { $('status').textContent = s; $('status').style.display = s ? '' : 'none'; }
+  function showReady() {
+    var el = $('ready');
+    el.className = 'ready';
+    if (testMode) { el.textContent = 'テスト中: 線を横切ると光ります'; return; }
+    if (!timer) { el.textContent = '準備中…'; return; }
+    if (running) { el.textContent = '計測中'; el.classList.add('run'); return; }
+    if (useOneLine()) { el.textContent = '「📣 合図」で開始'; el.classList.add('arm'); return; }
+    if (armed) { el.textContent = '準備OK — 走ってください'; el.classList.add('ok'); }
+    else { el.textContent = '「▶ 計測を待つ」を押す'; el.classList.add('arm'); }
+  }
+  $('armBtn').addEventListener('click', function () {
+    TS.unlockAudio();
+    closeResult();
+    armed = true; timer.arm(); gates.forEach(function (g) { g.reset(); });
+    setStatus(ev === 'agility505' ? '計測線を切ったらスタート' : '準備OK。スタート線を切ると計測が始まります');
+    showReady();
+  });
+  $('bgBtn').addEventListener('click', function () { resetBackground(); TS.toast('背景を覚え直しました（線の上に人がいない状態で）'); });
+  $('testBtn').addEventListener('click', function () {
+    testMode = !testMode;
+    $('testBtn').classList.toggle('on', testMode);
+    $('meters').hidden = !testMode;
+    setStatus(testMode ? '線を横切ってみてください。反応が弱ければ感度を上げ、勝手に反応するなら下げます' : '');
+    showReady();
+  });
+  $('settingsBtn').addEventListener('click', function () { stopLoop(); $('intro').style.display = 'flex'; });
+  $('flipBtn').addEventListener('click', function () {
+    facing = facing === 'environment' ? 'user' : 'environment';
+    TS.startCamera(video, { facing: facing, fps: 60 }).then(function (info) { onCamera(info); }).catch(function () { facing = facing === 'environment' ? 'user' : 'environment'; });
+  });
+
+  // ---------- 描画 ----------
+  function draw() {
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    if (!lines) return;
+    var names = lineNames(), now = performance.now();
+    var top = lines.top * vh, bottom = lines.bottom * vh;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,.28)';
+    ctx.fillRect(0, 0, vw, top); ctx.fillRect(0, bottom, vw, vh - bottom);
+    ctx.setLineDash([10, 8]); ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0, top); ctx.lineTo(vw, top); ctx.moveTo(0, bottom); ctx.lineTo(vw, bottom); ctx.stroke();
+    ctx.setLineDash([]);
+    [0, 1].forEach(function (li) {
+      if (li === 0 && useOneLine()) return;
+      var x = (li === 0 ? lines.a : lines.b) * vw, d = GAP * vw;
+      var hot = now - hitFlash[li] < 350;
+      var col = hot ? '#7CFC8A' : (li === 0 ? '#FFD166' : '#6EC6FF');
+      ctx.fillStyle = hot ? 'rgba(124,252,138,.35)' : 'rgba(255,255,255,.12)';
+      ctx.fillRect(x - d - COLS / 2, top, d * 2 + COLS, bottom - top);
+      ctx.strokeStyle = col; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, vh); ctx.stroke();
+      ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, (top + bottom) / 2, 16, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#000'; ctx.font = 'bold 15px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('↔', x, (top + bottom) / 2 + 5);
+      ctx.fillStyle = col; ctx.font = 'bold 18px sans-serif'; ctx.textAlign = 'left';
+      ctx.fillText(names[li], x + 10, top - 8 > 20 ? top - 8 : 22);
+    });
+    ctx.restore();
+    if (testMode) {
+      var idx = useOneLine() ? [1] : [0, 1];
+      $('meters').innerHTML = idx.map(function (li) {
+        return '<div class="meter' + (now - hitFlash[li] < 350 ? ' hit' : '') + '">' + TS.esc(names[li]) + '　' + ['左', '中', '右'].map(function (n, k) { return n + Math.round(occ[li][k] * 100) + '%'; }).join(' ') +
+          '<div class="bar"><i style="width:' + Math.round(occ[li][1] * 100) + '%"></i></div></div>';
+      }).join('');
+    }
+  }
+
+  // ---------- ループ ----------
+  var loopOn = false, rvfcId = 0;
+  function frameCb(now, meta) {
+    if (!loopOn) return;
+    var t = meta && typeof meta.mediaTime === 'number' ? meta.mediaTime : now / 1000;
+    mediaOffset = t - now / 1000;
+    if (t > lastT) { sample(t); lastT = t; }
+    draw();
+    frames++;
+    if (now - fpsAt > 1000) { fpsVal = Math.round(frames * 1000 / (now - fpsAt)); frames = 0; fpsAt = now; $('fps').textContent = fpsVal + ' fps'; }
+    schedule();
+  }
+  function schedule() {
+    if (!loopOn) return;
+    if (video.requestVideoFrameCallback) rvfcId = video.requestVideoFrameCallback(frameCb);
+    else requestAnimationFrame(function (now) { frameCb(now, null); });
+  }
+  function startLoop() { if (loopOn) return; loopOn = true; lastT = 0; fpsAt = performance.now(); frames = 0; schedule(); }
+  function stopLoop() { loopOn = false; if (video.requestVideoFrameCallback && rvfcId) video.cancelVideoFrameCallback(rvfcId); }
+
+  // ---------- 線のドラッグ ----------
+  var drag = null;
+  function toVideo(e) {
+    var r = canvas.getBoundingClientRect();
+    return { x: (e.clientX - r.left) / r.width * vw, y: (e.clientY - r.top) / r.height * vh };
+  }
+  canvas.addEventListener('pointerdown', function (e) {
+    if (!lines || !vw) return;
+    var p = toVideo(e), tol = vw * 0.05;
+    var cands = [];
+    if (!useOneLine()) cands.push({ k: 'a', d: Math.abs(p.x - lines.a * vw) });
+    cands.push({ k: 'b', d: Math.abs(p.x - lines.b * vw) });
+    cands.push({ k: 'top', d: Math.abs(p.y - lines.top * vh) * 1.2 });
+    cands.push({ k: 'bottom', d: Math.abs(p.y - lines.bottom * vh) * 1.2 });
+    cands.sort(function (a, b) { return a.d - b.d; });
+    if (cands[0].d > tol) return;
+    drag = cands[0].k;
+    canvas.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  canvas.addEventListener('pointermove', function (e) {
+    if (!drag) return;
+    var p = toVideo(e);
+    if (drag === 'a' || drag === 'b') lines[drag] = Math.max(0.03, Math.min(0.97, p.x / vw));
+    else if (drag === 'top') lines.top = Math.max(0.02, Math.min(lines.bottom - 0.06, p.y / vh));
+    else lines.bottom = Math.min(0.98, Math.max(lines.top + 0.06, p.y / vh));
+    e.preventDefault();
+  });
+  function endDrag() {
+    if (!drag) return;
+    drag = null;
+    saveLines();
+    resetBackground();
+    makeTimer();
+    setStatus('線を動かしたので背景を覚え直しました');
+  }
+  canvas.addEventListener('pointerup', endDrag);
+  canvas.addEventListener('pointercancel', endDrag);
+
+  // ---------- 記録の一覧（今日） ----------
+  function renderRuns() {
+    var pid = picker.get();
+    var rows = R.recordsOf(TS.store, pid || null, ev).filter(function (r) { return new Date(r.at).toDateString() === new Date().toDateString(); }).slice(0, 8);
+    $('runs').innerHTML = rows.length ? rows.map(function (r) {
+      var p = R.playerById(TS.store, r.playerId), d = new Date(r.at);
+      return '<div class="item"><div class="n">' + (p ? TS.esc(p.name) : '選手なし') + '<small>' + d.getHours() + ':' + ('0' + d.getMinutes()).slice(-2) + '</small></div><div class="v">' + TS.fmtSec(r.value) + ' 秒</div><button class="x" data-id="' + r.id + '">×</button></div>';
+    }).join('') : '<div class="hint">今日の ' + EVENTS[ev].label + ' の記録はまだありません</div>';
+    $('runs').querySelectorAll('.x').forEach(function (b) { b.addEventListener('click', function () { R.removeRecord(TS.store, b.dataset.id); TS.saveStore(); renderRuns(); }); });
+  }
+
+  // ---------- 開始 ----------
+  function onCamera(info) {
+    vw = video.videoWidth; vh = video.videoHeight;
+    canvas.width = vw; canvas.height = vh;
+    resetBackground();
+    setStatus('線を地面の目印（コーン）に合わせてください。' + (info.fps ? Math.round(info.fps) + 'fps' : ''));
+  }
+  $('setupBtn').addEventListener('click', function () {
+    TS.unlockAudio();
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { $('introStatus').textContent = 'このブラウザはカメラに対応していません'; return; }
+    $('setupBtn').disabled = true; $('introStatus').textContent = 'カメラを起動中…';
+    loadLines(); makeDetectors();
+    TS.startCamera(video, { facing: facing, fps: 60 }).then(function (info) {
+      onCamera(info);
+      makeTimer();
+      $('intro').style.display = 'none';
+      ['armBtn', 'bgBtn', 'testBtn', 'flipBtn', 'settingsBtn', 'signalBtn'].forEach(function (id) { $(id).disabled = false; });
+      $('signalBtn').hidden = !useOneLine();
+      $('armBtn').hidden = useOneLine();
+      $('evChip').textContent = EVENTS[ev].label;
+      picker2.refresh();
+      renderRuns();
+      startLoop();
+      TS.keepAwake();
+    }).catch(function (err) {
+      $('introStatus').textContent = TS.cameraError(err);
+    }).then(function () { $('setupBtn').disabled = false; });
+  });
+  TS.registerSW();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+{
+  "projects": { "default": "grande-tactics-board" },
+  "targets": { "grande-tactics-board": { "hosting": { "training": ["grande-training"] } } }
+}
