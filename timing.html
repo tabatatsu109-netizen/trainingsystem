@@ -77,6 +77,7 @@
   <div class="row">
     <label>感度 <input type="range" id="sens" min="12" max="45" value="26" style="width:110px"></label>
     <label><input type="checkbox" id="autoSave" checked> 自動で記録</label>
+    <label><input type="checkbox" id="autoArm" checked> 次の走者を自動で待つ</label>
     <button class="ghost" id="flipBtn" disabled>🔄 カメラ</button>
     <button class="ghost" id="settingsBtn" disabled>設定へ戻る</button>
   </div>
@@ -190,6 +191,7 @@
     if (timer && !testMode) {
       var to = timer.tick(t);
       if (to) { running = false; setStatus('時間切れ。もう一度どうぞ'); showReady(); }
+      autoArmTick(t);
     }
   }
   function onCross(li, cross, t) {
@@ -216,8 +218,10 @@
     else { $('resSave').textContent = '💾 記録する'; $('resSave').disabled = false; }
     $('result').hidden = false;
     setStatus('');
+    clearTimeout(resultTimer);
+    if ($('autoArm').checked) resultTimer = setTimeout(function () { if (!$('result').hidden) closeResult(); }, 4000);
   }
-  var lastResult = null;
+  var lastResult = null, resultTimer = 0, quietSince = null;
   function saveResult() {
     if (!lastResult) return;
     R.addRecord(TS.store, picker.get(), ev, lastResult.time);
@@ -227,10 +231,20 @@
   $('resSave').addEventListener('click', function () { saveResult(); $('resSave').textContent = '✓ 記録しました'; $('resSave').disabled = true; });
   $('resDrop').addEventListener('click', closeResult);
   function closeResult() {
+    clearTimeout(resultTimer);
     $('result').hidden = true;
     lastResult = null;
-    if (timer) { timer.reset(); if (ev !== 'agility505' && !useOneLine()) armed = false; }
+    if (timer) { timer.reset(); if (!useOneLine()) armed = false; }
+    quietSince = null;
     showReady();
+  }
+  // 線の帯がしばらく静かなら（走り終えた子が離れたら）自動で次の計測を待つ
+  function autoArmTick(t) {
+    if (useOneLine() || armed || running || testMode || !timer || !$('autoArm').checked || !$('result').hidden) { quietSince = null; return; }
+    var quiet = occ[0][1] < 0.15 && occ[1][1] < 0.15;
+    if (!quiet) { quietSince = null; return; }
+    if (quietSince === null) quietSince = t;
+    else if (t - quietSince > 1.5) { armed = true; timer.arm(); gates.forEach(function (g) { g.reset(); }); TS.beep(523, 0.08, 0.15); setStatus('次の人、どうぞ'); showReady(); }
   }
   $('result').addEventListener('click', function (e) { if (e.target === $('result')) closeResult(); });
 
@@ -263,7 +277,7 @@
     if (running) { el.textContent = '計測中'; el.classList.add('run'); return; }
     if (useOneLine()) { el.textContent = '「📣 合図」で開始'; el.classList.add('arm'); return; }
     if (armed) { el.textContent = '準備OK — 走ってください'; el.classList.add('ok'); }
-    else { el.textContent = '「▶ 計測を待つ」を押す'; el.classList.add('arm'); }
+    else { el.textContent = $('autoArm').checked ? '線から離れると自動で次を待ちます' : '「▶ 計測を待つ」を押す'; el.classList.add('arm'); }
   }
   $('armBtn').addEventListener('click', function () {
     TS.unlockAudio();

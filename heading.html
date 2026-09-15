@@ -142,7 +142,7 @@ function drawBall(b, color) {
 
 // ---------- かぞえる ----------
 const counter = new HC.HeadingCounter();
-let counting = false, sessionCount = 0, detectBusy = false, perfAcc = 0, perfN = 0;
+let counting = false, sessionCount = 0, detectBusy = false, perfAcc = 0, perfN = 0, poseEvery = 0, lastLm = null;
 function capOf() { const p = R.playerById(TS.store, picker.get()); return p ? (p.headingCap || 20) : 20; }
 function renderCount() {
   $('count').textContent = sessionCount;
@@ -165,10 +165,12 @@ async function countLoop() {
   if (!detectBusy && video.readyState >= 2) {
     detectBusy = true;
     const t0 = performance.now(), ms = tsMs(video.currentTime || t0 / 1000);
-    let lm = null, b = null;
+    let lm = lastLm, b = null;
     try {
-      const pr = pose.detectForVideo(video, ms);
-      lm = pr.landmarks && pr.landmarks[0] ? HC.toPx(pr.landmarks[0], vw, vh) : null;
+      if (poseEvery++ % 3 === 0) {   // 頭はゆっくりしか動かないので姿勢は 3 コマに 1 回。ボールは毎コマ
+        const pr = pose.detectForVideo(video, ms);
+        lm = lastLm = pr.landmarks && pr.landmarks[0] ? HC.toPx(pr.landmarks[0], vw, vh) : null;
+      }
       b = ballFrom(ball.detectForVideo(video, ms));
     } catch (e) { console.warn(e); }
     ctx.drawImage(video, 0, 0, vw, vh);

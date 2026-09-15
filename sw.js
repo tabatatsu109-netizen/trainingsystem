@@ -1,6 +1,6 @@
 /* オフライン用: ページ・部品・AI モデルを最初に開いたときに端末へ入れておく（合計 約45MB）。
    2 回目からはネットが無くても動く。VERSION を上げると入れ直す */
-const VERSION = 'ts-v1';
+const VERSION = 'ts-v2';
 const FILES = [
   'index.html', 'timing.html', 'heading.html', 'records.html',
   'lifting-counter.html', 'jump-meter.html', 'delay-replay.html',
