@@ -39,7 +39,7 @@
     <div class="row" style="margin-top:8px"><button class="ghost" id="addBtn">＋ 選手を追加</button><button class="ghost" id="editBtn" hidden>✎ 名前・番号</button><button class="danger" id="delBtn" hidden>削除</button></div>
   </section>
   <section id="capSec" hidden>
-    <div class="cap">1日のヘディング上限 <input type="number" id="capIn" min="0" max="200" inputmode="numeric"> 回（チームの方針に合わせて。目安: 小学生 10〜20 回）</div>
+    <div class="cap">1週間のヘディング上限（ボールあり） <input type="number" id="capIn" min="0" max="100" inputmode="numeric"> 回（JFA ガイドラインの目安: U-13〜15 は週 10 回。チームの方針に合わせて）</div>
   </section>
   <section>
     <h2>種目</h2>
@@ -58,6 +58,9 @@
   <p class="hint">記録はこの端末の中だけに保存されます。CSV で書き出すと Excel などで整理できます。映像は保存していません。</p>
 </main>
 <script src="js/records.js"></script>
+<script src="js/heading-core.js"></script>
+<script src="js/heading-form.js"></script>
+<script src="js/heading-log.js"></script>
 <script src="js/common.js"></script>
 <script>
 (function () {
@@ -74,7 +77,7 @@
     $('players').querySelectorAll('button').forEach(function (b) { b.addEventListener('click', function () { pid = b.dataset.id; localStorage.setItem('trainingsystem.lastPlayer', pid); render(); }); });
     $('editBtn').hidden = $('delBtn').hidden = !pid;
     $('capSec').hidden = !pid;
-    if (pid) $('capIn').value = R.playerById(st, pid).headingCap || 20;
+    if (pid) { var cp = R.playerById(st, pid).headingWeekCap; $('capIn').value = cp != null ? cp : 10; }
     $('tabs').innerHTML = Object.keys(R.KINDS).map(function (k) { return '<button class="' + (k === kind ? 'on' : '') + '" data-k="' + k + '">' + R.KINDS[k].label + '</button>'; }).join('');
     $('tabs').querySelectorAll('button').forEach(function (b) { b.addEventListener('click', function () { kind = b.dataset.k; localStorage.setItem('ts.records.kind', kind); render(); }); });
     var K = R.KINDS[kind], rows = R.recordsOf(st, pid || null, kind);
@@ -86,7 +89,7 @@
       cards.push('<div class="card"><small>直近5回の平均</small><b>' + R.fmtValue(kind, avg) + '</b> ' + K.unit + '</div>');
       cards.push('<div class="card"><small>回数</small><b>' + rows.length + '</b> 本</div>');
     }
-    if (kind === 'heading' && pid) cards.push('<div class="card"><small>今日の合計</small><b>' + R.todayTotal(st, pid, 'heading') + '</b> 回</div>');
+    if (kind === 'heading' && pid) cards.push('<div class="card"><small>今週の合計</small><b>' + (window.HeadingLog ? HeadingLog.weekHits(HeadingLog.load(localStorage), pid) : R.weekTotal(st, pid, 'heading')) + '</b> 回</div>');
     $('best').innerHTML = cards.join('') || '<div class="hint">まだ記録がありません</div>';
     drawChart(rows.slice().reverse(), K);
     $('list').innerHTML = rows.slice(0, 100).map(function (r) {
@@ -131,12 +134,14 @@
   $('delBtn').addEventListener('click', function () {
     var p = R.playerById(TS.store, pid); if (!p) return;
     if (!confirm(p.name + ' を削除しますか？（記録もすべて消えます）')) return;
-    R.removePlayer(TS.store, pid); TS.saveStore(); pid = ''; render();
+    R.removePlayer(TS.store, pid); TS.saveStore();
+    if (window.HeadingLog) { var hl = HeadingLog.load(localStorage); HeadingLog.removePlayer(hl, pid); HeadingLog.save(localStorage, hl); }
+    pid = ''; render();
   });
   $('capIn').addEventListener('change', function () {
     var p = R.playerById(TS.store, pid); if (!p) return;
     var v = parseInt($('capIn').value, 10);
-    p.headingCap = v >= 0 && v <= 200 ? v : 20; TS.saveStore(); render();
+    p.headingWeekCap = v >= 0 && v <= 100 ? v : 10; TS.saveStore(); render();
   });
   $('csvBtn').addEventListener('click', function () {
     var d = new Date(), name = 'training_' + d.getFullYear() + ('0' + (d.getMonth() + 1)).slice(-2) + ('0' + d.getDate()).slice(-2) + '.csv';

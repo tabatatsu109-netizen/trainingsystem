@@ -12,7 +12,8 @@
     agility505: { label: '505 アジリティ', unit: '秒', best: 'min', digits: 2 },
     heading: { label: 'ヘディング回数', unit: '回', best: null, digits: 0 },
     headHeight: { label: 'ヘディング打点の高さ', unit: 'cm', best: 'max', digits: 0 },
-    headJump: { label: 'ヘディングのジャンプ', unit: 'cm', best: 'max', digits: 0 }
+    headJump: { label: 'ヘディングのジャンプ', unit: 'cm', best: 'max', digits: 0 },
+    headTiming: { label: 'ヘディング 頂点とのずれ', unit: '秒', best: 'min', digits: 2 }
   };
 
   function empty() { return { players: [], records: [] }; }
@@ -92,6 +93,16 @@
     return s;
   }
 
+  // その週（月曜はじまり）の合計
+  function weekTotal(store, playerId, kind, now) {
+    now = now || new Date();
+    var from = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    from.setDate(from.getDate() - (from.getDay() + 6) % 7);
+    var s = 0;
+    recordsOf(store, playerId, kind).forEach(function (r) { if (new Date(r.at) >= from) s += r.value; });
+    return s;
+  }
+
   function pad(n) { return (n < 10 ? '0' : '') + n; }
   function csvCell(v) {
     v = String(v == null ? '' : v);
@@ -119,7 +130,7 @@
     KEY: KEY, KINDS: KINDS, load: load, save: save,
     addPlayer: addPlayer, removePlayer: removePlayer, playerById: playerById,
     addRecord: addRecord, removeRecord: removeRecord, recordsOf: recordsOf,
-    best: best, todayTotal: todayTotal, toCSV: toCSV, fmtValue: fmtValue
+    best: best, todayTotal: todayTotal, weekTotal: weekTotal, toCSV: toCSV, fmtValue: fmtValue
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.TrainingRecords = api;

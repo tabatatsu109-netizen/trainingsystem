@@ -1,11 +1,11 @@
 /* オフライン用: ページ・部品・AI モデルを最初に開いたときに端末へ入れておく（合計 約45MB）。
    2 回目からはネットが無くても動く。VERSION を上げると入れ直す */
-const VERSION = 'ts-v2';
+const VERSION = 'ts-v3';
 const FILES = [
-  'index.html', 'timing.html', 'heading.html', 'records.html',
+  'index.html', 'timing.html', 'heading.html', 'heading-classic.html', 'records.html',
   'lifting-counter.html', 'jump-meter.html', 'delay-replay.html',
   'manifest.webmanifest', 'css/app.css',
-  'js/records.js', 'js/common.js', 'js/timing-core.js', 'js/heading-core.js', 'js/vision.js',
+  'js/records.js', 'js/common.js', 'js/timing-core.js', 'js/heading-core.js', 'js/heading-form.js', 'js/heading-log.js', 'js/vision.js',
   'img/icon-192.png', 'img/icon-512.png', 'img/favicon.png',
   'vendor/mediapipe/vision_bundle.mjs',
   'vendor/mediapipe/wasm/vision_wasm_internal.js', 'vendor/mediapipe/wasm/vision_wasm_internal.wasm',

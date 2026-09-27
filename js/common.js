@@ -90,7 +90,7 @@
       sel.value = R.playerById(store, cur) ? cur : '';
     }
     sel.addEventListener('change', function () {
-      localStorage.setItem('trainingsystem.lastPlayer', sel.value);
+      try { localStorage.setItem('trainingsystem.lastPlayer', sel.value); } catch (e) { /* ignore */ }
       onChange && onChange(sel.value);
     });
     add.addEventListener('click', function () {
@@ -102,7 +102,7 @@
       saveStore();
       render();
       sel.value = p.id;
-      localStorage.setItem('trainingsystem.lastPlayer', p.id);
+      try { localStorage.setItem('trainingsystem.lastPlayer', p.id); } catch (e) { /* ignore */ }
       onChange && onChange(p.id);
     });
     el.classList.add('pick');
